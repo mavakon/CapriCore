@@ -89,18 +89,25 @@ def verify_source():
 
 
 def pinned_source(installed, source, platform=None):
-    """The pinned Git commit, or on macOS the same commit's hash-locked GitHub archive."""
+    """The pinned Git commit, or on macOS the same commit's GitHub archive.
+
+    macOS installs from config/requirements-voice-macos.lock, whose
+    --require-hashes sync verifies the archive's SHA-256 before installing.
+    uv records such a direct URL with an empty archive_info, so the commit in
+    the official archive URL is what identifies the source here, as the
+    commit_id does for a Git install.
+    """
     revision = source["revision"]
     if installed.get("vcs_info", {}).get("commit_id") == revision:
         return True
     if (platform or sys.platform) != "darwin":
         return False
     repository = source["repository"].removesuffix(".git")
-    archive = installed.get("archive_info")
     return (
         installed.get("url") == f"{repository}/archive/{revision}.tar.gz"
-        and isinstance(archive, dict)
-        and bool(archive.get("hash") or archive.get("hashes"))
+        and isinstance(installed.get("archive_info"), dict)
+        and "vcs_info" not in installed
+        and "dir_info" not in installed
     )
 
 

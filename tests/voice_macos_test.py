@@ -163,21 +163,23 @@ class PinnedSourceTests(unittest.TestCase):
         self.assertTrue(pinned_source(installed, self.SOURCE, 'win32'))
         self.assertTrue(pinned_source(installed, self.SOURCE, 'darwin'))
 
-    def test_macos_accepts_only_the_same_commit_as_a_hash_locked_archive(self):
-        installed = {'url': self.ARCHIVE, 'archive_info': {'hash': 'sha256=' + 'a' * 64,
-                                                           'hashes': {'sha256': 'a' * 64}}}
+    def test_macos_accepts_only_the_same_commit_as_an_official_archive(self):
+        # uv 0.13 records hash-locked direct URLs with an empty archive_info.
+        installed = {'url': self.ARCHIVE, 'archive_info': {}}
         self.assertTrue(pinned_source(installed, self.SOURCE, 'darwin'))
         self.assertTrue(pinned_source({'url': self.ARCHIVE, 'archive_info': {'hashes': {'sha256': 'a' * 64}}},
                                       self.SOURCE, 'darwin'))
         self.assertFalse(pinned_source(installed, self.SOURCE, 'win32'))
-        self.assertFalse(pinned_source({'url': self.ARCHIVE, 'archive_info': {}}, self.SOURCE, 'darwin'))
         self.assertFalse(pinned_source({'url': self.ARCHIVE}, self.SOURCE, 'darwin'))
+        self.assertFalse(pinned_source({'url': self.ARCHIVE, 'archive_info': 'sha256'}, self.SOURCE, 'darwin'))
+        self.assertFalse(pinned_source({'url': self.ARCHIVE, 'dir_info': {'editable': True}, 'archive_info': {}},
+                                       self.SOURCE, 'darwin'))
         other = self.ARCHIVE.replace('5de7a54a', '00000000')
-        self.assertFalse(pinned_source({'url': other, 'archive_info': {'hash': 'sha256=x'}},
-                                       self.SOURCE, 'darwin'))
+        self.assertFalse(pinned_source({'url': other, 'archive_info': {}}, self.SOURCE, 'darwin'))
         fork = self.ARCHIVE.replace('resemble-ai', 'someone-else')
-        self.assertFalse(pinned_source({'url': fork, 'archive_info': {'hash': 'sha256=x'}},
-                                       self.SOURCE, 'darwin'))
+        self.assertFalse(pinned_source({'url': fork, 'archive_info': {}}, self.SOURCE, 'darwin'))
+        zipball = self.ARCHIVE.replace('.tar.gz', '.zip')
+        self.assertFalse(pinned_source({'url': zipball, 'archive_info': {}}, self.SOURCE, 'darwin'))
         self.assertFalse(pinned_source({}, self.SOURCE, 'darwin'))
 
 
