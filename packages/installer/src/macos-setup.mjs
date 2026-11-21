@@ -139,6 +139,7 @@ export async function macosSetupOptions({
     supported: recommendation.supported,
     reasons: recommendation.reasons ?? [],
     recommended: recommendation.profile?.id ?? null,
+    embeddingModel: EMBEDDING_MODEL,
     embeddingBytes: installerManifest.storage.embeddingBytes,
     models: MODEL_CHOICES.map((choice) => {
       let reason = null;
@@ -292,7 +293,7 @@ export function modelProgress(models, update) {
           sizes[current] * Math.max(0, Math.min(1, stageFraction))) /
           total,
       );
-    return { file, received, total: bytes };
+    return { model: current >= 0 ? models[current] : null, file, received, total: bytes };
   };
 }
 

@@ -704,7 +704,7 @@ test('setup sizes, languages and progress', () => {
   assert.equal(parse('Preparing qwen3.5:4b...'), null);
   assert.deepEqual(
     parse('{"capriFileTransfer":"model.gguf","received":5,"total":10,"stageFraction":0.5}'),
-    { file: 'model.gguf', received: 5, total: 10 },
+    { model: 'qwen3.5:4b', file: 'model.gguf', received: 5, total: 10 },
   );
   assert.equal(parse('{"capriFileTransfer":"../x","received":5,"total":10}'), null);
   assert.equal(parse('{"capriFileTransfer":"a","received":11,"total":10}'), null);
@@ -721,6 +721,7 @@ test('setup options describe this Mac and recommend a model that fits', async ()
     free: () => 100 * GiB,
   });
   assert.equal(options.recommended, 'desktop');
+  assert.equal(options.embeddingModel, 'bge-m3:latest');
   assert.equal(options.hardware.unifiedMemory, true);
   assert.equal(options.hardware.gpuMemoryBytes, 18 * GiB);
   assert.equal(options.models.find((item) => item.id === 'quality').available, false);

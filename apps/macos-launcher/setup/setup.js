@@ -19,7 +19,10 @@
   let profile = null;
   const lines = [];
 
+  // Downloads and disk space in decimal GB, as Finder shows them; memory in
+  // binary GB, as About This Mac and the model requirements state it.
   const gb = (bytes) => (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + ' GB';
+  const memory = (bytes) => Math.round(bytes / 2 ** 30) + ' GB';
   const modelName = (model) => {
     const tag = model.model.split(':')[1] ?? '';
     return `${model.family} ${tag.toUpperCase()}`;
@@ -112,9 +115,9 @@
     const hardware = value.hardware;
     $('hardware').textContent = [
       hardware.chip,
-      `${gb(hardware.ramBytes)} memory`,
+      `${memory(hardware.ramBytes)} memory`,
       hardware.unifiedMemory && hardware.gpuMemoryBytes
-        ? `Metal can use about ${gb(hardware.gpuMemoryBytes)}`
+        ? `Metal can use about ${memory(hardware.gpuMemoryBytes)}`
         : null,
     ]
       .filter(Boolean)
@@ -260,7 +263,15 @@
         $('running-progress').value = event.fraction;
         break;
       case 'download':
-        $('transfer').textContent = `${event.file} · ${gb(event.received)} of ${gb(event.total)}`;
+        {
+          const choice = options?.models.find((item) => item.model === event.model);
+          const what = choice
+            ? modelName(choice)
+            : event.model === options?.embeddingModel
+              ? 'Memory model'
+              : event.file;
+          $('transfer').textContent = `${what} · ${gb(event.received)} of ${gb(event.total)}`;
+        }
         break;
       case 'log':
         appendLog(event.message);

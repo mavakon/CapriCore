@@ -190,7 +190,7 @@ function forward(event) {
 function setupWindow() {
   window = new BrowserWindow({
     width: 760,
-    height: 600,
+    height: 680,
     minWidth: 640,
     minHeight: 520,
     show: false,
