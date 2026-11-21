@@ -129,6 +129,14 @@ export function shippedDependency(name) {
   return !/^node_modules\/electron\/dist(?:\/|$)/.test(name);
 }
 
+/**
+ * Source files the Mac payload leaves out: the Windows .cmd launchers in the
+ * folder root and the GitHub repository settings. Nothing on macOS runs them.
+ */
+export function shippedSourceFile(name) {
+  return !/^[^/]+\.cmd$/i.test(name) && !/^\.github\//.test(name);
+}
+
 async function sha256(file) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file, { highWaterMark: 1024 * 1024 }))

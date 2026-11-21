@@ -47,6 +47,7 @@ import {
   infoPlistChanges,
   payloadManifest,
   shippedDependency,
+  shippedSourceFile,
 } from './macos-bundle.mjs';
 import { download, materializeLlama, sha256 } from '../setup/setup-macos.mjs';
 import { PAYLOAD_FOLDER } from '../../apps/macos-launcher/install-root.mjs';
@@ -98,19 +99,22 @@ function sourceCommit() {
 function copySource(payload) {
   const files = sourceFiles(root);
   validateSource(files);
+  const shipped = files.filter(shippedSourceFile);
   // validateSource looks for Windows profile paths; also refuse this Mac's own.
   const home = `/Users/${os.userInfo().username}/`;
   for (const name of files)
     if (/\.(?:mjs|js|cjs|py|json|md|toml|ya?ml|txt|sh|html|css)$/.test(name))
       if (readFileSync(path.join(root, name), 'utf8').includes(home))
         throw new Error(`${name} contains a path in this Mac's home folder.`);
-  for (const name of files) {
+  for (const name of shipped) {
     const target = path.join(payload, name);
     mkdirSync(path.dirname(target), { recursive: true });
     copyFileSync(path.join(root, name), target);
     chmodSync(target, lstatSync(path.join(root, name)).mode & 0o111 ? 0o755 : 0o644);
   }
-  log(`copied ${files.length} source files.`);
+  log(
+    `copied ${shipped.length} source files (${files.length - shipped.length} Windows-only left out).`,
+  );
 }
 
 async function installNode(cache, payload) {

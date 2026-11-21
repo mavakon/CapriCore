@@ -57,6 +57,7 @@ import {
   payloadFiles,
   payloadManifest,
   shippedDependency,
+  shippedSourceFile,
 } from '../tools/release/macos-bundle.mjs';
 import {
   MACOS_REPOSITORY,
@@ -389,6 +390,12 @@ test('Capri.app identity, helpers and versions follow macOS rules', () => {
   );
   assert.equal(shippedDependency('node_modules/electron/dist/Electron.app'), false);
   assert.equal(shippedDependency('node_modules/openclaw/openclaw.mjs'), true);
+  assert.equal(shippedSourceFile('Install Capri.cmd'), false);
+  assert.equal(shippedSourceFile('start.cmd'), false);
+  assert.equal(shippedSourceFile('.github/workflows/ci.yml'), false);
+  assert.equal(shippedSourceFile('scripts/windows/helper.cmd'), true);
+  assert.equal(shippedSourceFile('.python-version'), true);
+  assert.equal(shippedSourceFile('apps/desktop/main.mjs'), true);
 });
 
 test('the build lists regular files only, with their modes, in a stable order', async (t) => {
