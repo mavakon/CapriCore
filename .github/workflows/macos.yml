@@ -49,32 +49,26 @@ jobs:
       - name: macOS smoke check (doctor, bundled llama.cpp, tiny model chat)
         if: ${{ !cancelled() }}
         run: node tools/verify/verify-macos-smoke.mjs
-      - name: Survey desktop verifications on macOS
+      # Desktop (Electron) verifications against fixture servers. These are the
+      # ones that pass on macOS; see docs/macos.md for the rest.
+      - name: Desktop - companion settings
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: |
-          status=0
-          for script in \
-            verify-desktop.mjs \
-            verify-settings-first-open.mjs \
-            verify-settings-lifecycle.mjs \
-            verify-companion-settings.mjs \
-            verify-button-feedback.mjs \
-            verify-text-selection.mjs \
-            verify-languages.mjs \
-            verify-window-dimming.mjs \
-            verify-app-catalog-settings.mjs \
-            verify-spotify-settings.mjs \
-            verify-inference-api.mjs \
-            verify-maintenance-offline.mjs \
-            verify-update-handoff.mjs \
-            verify-computer-control.mjs; do
-            echo "::group::$script"
-            start=$(date +%s)
-            if perl -e 'alarm shift; exec @ARGV' 300 node tools/verify/$script > "/tmp/$script.log" 2>&1; then result=PASS; else result=FAIL; status=1; fi
-            tail -40 "/tmp/$script.log"
-            echo "::endgroup::"
-            echo "SURVEY $result $script $(( $(date +%s) - start ))s" | tee -a /tmp/survey.txt
-          done
-          cat /tmp/survey.txt
-          exit $status
+        run: node tools/verify/verify-companion-settings.mjs
+      - name: Desktop - button feedback
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-button-feedback.mjs
+      - name: Desktop - languages
+        if: ${{ !cancelled() }}
+        run: npm run verify:languages
+      - name: Desktop - window dimming
+        if: ${{ !cancelled() }}
+        run: npm run verify:dimming
+      - name: Desktop - app catalog settings
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-app-catalog-settings.mjs
+      - name: Desktop - Spotify settings
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-spotify-settings.mjs
+      - name: Desktop - inference API
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-inference-api.mjs

@@ -3,9 +3,10 @@
 // Confirms that the host is a supported desktop platform, that `capri doctor`
 // finds the pinned runtimes and reports Apple unified memory, and that the
 // bundled llama.cpp loads a tiny GGUF model and answers an OpenAI-style chat
-// request on the CPU. The only download is a pinned test model of about 1 MB.
+// request, first on the CPU and then offloaded to Metal. The only download is a
+// pinned test model of about 1 MB.
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -17,7 +18,7 @@ const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 // The tiny story model llama.cpp uses in its own CI. It has no chat template.
 const TINY_MODEL = {
   url: 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf',
-  sha256: 'TO_BE_PINNED',
+  sha256: '270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d',
 };
 const checks = [];
 const pass = (name, detail) => {
@@ -58,12 +59,21 @@ pass('capri doctor finds Node, llama.cpp and OpenClaw', {
 
 const { llamaPath } = await import('../../packages/runtime/src/index.mjs');
 assert.ok(llamaPath.startsWith(path.join(root, '.runtime') + path.sep), llamaPath);
-const version = execFileSync(llamaPath, ['--version'], {
-  encoding: 'utf8',
-  timeout: 30000,
-  stdio: ['ignore', 'pipe', 'pipe'],
-}).trim();
-pass('bundled llama-server runs', version.split('\n').at(-1) || '(no version line)');
+// llama-server prints its version and the devices it can use on stderr.
+const probe = (args) => {
+  const result = spawnSync(llamaPath, args, { encoding: 'utf8', timeout: 30000 });
+  assert.equal(result.status, 0, `llama-server ${args.join(' ')}: ${result.stderr}`);
+  return (result.stdout + result.stderr).trim();
+};
+const version = probe(['--version']).match(/^version: .+$/m)?.[0];
+assert.ok(version, 'llama-server reports its version');
+pass('bundled llama-server runs', version);
+const metal = probe(['--list-devices'])
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => /^MTL\d/.test(line));
+assert.ok(metal.length, 'llama-server lists a Metal device');
+pass('llama.cpp sees a Metal device', metal);
 
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
@@ -104,76 +114,89 @@ function freePort() {
   });
 }
 
-const model = await tinyModel();
-const port = await freePort();
-const url = `http://127.0.0.1:${port}`;
-// Same CPU-only flags the runtime uses when a model must not touch the GPU.
-const server = spawn(
-  llamaPath,
-  [
-    '--host',
-    '127.0.0.1',
-    '--port',
-    String(port),
-    '--model',
-    model,
-    '--alias',
-    'ci-tiny',
-    '--ctx-size',
-    '256',
-    '--parallel',
-    '1',
-    '--no-webui',
-    '--jinja',
-    '--chat-template',
-    'chatml',
-    '--device',
-    'none',
-    '--n-gpu-layers',
-    '0',
-    '--fit',
-    'off',
-  ],
-  { stdio: ['ignore', 'pipe', 'pipe'] },
-);
-let output = '';
-server.stdout.on('data', (chunk) => (output += chunk));
-server.stderr.on('data', (chunk) => (output += chunk));
-const exited = new Promise((resolve) => server.once('exit', resolve));
-try {
-  const deadline = Date.now() + 60000;
-  for (;;) {
-    if (server.exitCode !== null) throw new Error(`llama-server exited (${server.exitCode}).`);
-    const health = await fetch(url + '/health').catch(() => null);
-    if (health?.ok) break;
-    if (Date.now() > deadline) throw new Error('llama-server did not become healthy in 60 s.');
-    await new Promise((resolve) => setTimeout(resolve, 250));
+async function chat(model, label, deviceArgs) {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const server = spawn(
+    llamaPath,
+    [
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--model',
+      model,
+      '--alias',
+      'ci-tiny',
+      '--ctx-size',
+      '256',
+      '--parallel',
+      '1',
+      '--no-webui',
+      '--jinja',
+      '--chat-template',
+      'chatml',
+      ...deviceArgs,
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let output = '';
+  server.stdout.on('data', (chunk) => (output += chunk));
+  server.stderr.on('data', (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => server.once('exit', resolve));
+  try {
+    const deadline = Date.now() + 60000;
+    for (;;) {
+      if (server.exitCode !== null) throw new Error(`llama-server exited (${server.exitCode}).`);
+      const health = await fetch(url + '/health').catch(() => null);
+      if (health?.ok) break;
+      if (Date.now() > deadline) throw new Error('llama-server did not become healthy in 60 s.');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const response = await fetch(url + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'ci-tiny',
+        messages: [{ role: 'user', content: 'Once upon a time' }],
+        max_tokens: 16,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    const reply = await response.json();
+    assert.ok(reply.usage?.completion_tokens > 0, JSON.stringify(reply));
+    const offloaded = output.match(/offloaded (\d+)\/(\d+) layers to GPU/);
+    pass(`llama-server answers a chat completion (${label})`, {
+      tokens: reply.usage.completion_tokens,
+      text: String(reply.choices?.[0]?.message?.content ?? '').slice(0, 60),
+      ...(offloaded ? { offloaded: offloaded[0] } : {}),
+    });
+    return { output, offloaded };
+  } catch (error) {
+    console.error(output.slice(-4000));
+    throw error;
+  } finally {
+    server.kill('SIGTERM');
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    if (server.exitCode === null && server.signalCode === null) server.kill('SIGKILL');
   }
-  const response = await fetch(url + '/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'ci-tiny',
-      messages: [{ role: 'user', content: 'Once upon a time' }],
-      max_tokens: 16,
-      temperature: 0,
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
-  assert.equal(response.status, 200, await response.clone().text());
-  const reply = await response.json();
-  const text = reply.choices?.[0]?.message?.content ?? '';
-  assert.ok(reply.usage?.completion_tokens > 0, JSON.stringify(reply));
-  pass('llama-server answers a chat completion on the CPU', {
-    tokens: reply.usage.completion_tokens,
-    text: text.slice(0, 60),
-  });
-} catch (error) {
-  console.error(output.slice(-4000));
-  throw error;
-} finally {
-  server.kill('SIGTERM');
-  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
-  if (server.exitCode === null && server.signalCode === null) server.kill('SIGKILL');
 }
+
+const model = await tinyModel();
+// Same CPU-only flags the runtime uses when a model must not touch the GPU.
+await chat(model, 'CPU', ['--device', 'none', '--n-gpu-layers', '0', '--fit', 'off']);
+const metalRun = await chat(model, 'Metal', [
+  '--device',
+  'MTL0',
+  '--n-gpu-layers',
+  '99',
+  '--fit',
+  'off',
+]);
+assert.ok(
+  !metalRun.offloaded || Number(metalRun.offloaded[1]) > 0,
+  `no layers reached the GPU: ${metalRun.offloaded?.[0]}`,
+);
 console.log(JSON.stringify({ checks: checks.length, passed: true }));

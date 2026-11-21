@@ -217,6 +217,10 @@ test('launch clears only the old stop request before a delayed child starts, the
     } catch {}
     for (const file of [markerPath(name), stop]) if (existsSync(file)) unlinkSync(file);
   });
+  // Let the child record its first look before requesting the fresh stop. On a
+  // fast spawn (macOS, Linux) the request could otherwise land first and be
+  // mistaken for the stale one.
+  for (let attempt = 0; attempt < 400 && !existsSync(entered); attempt++) await delay(25);
   await stopProcess(name);
   assert.deepEqual(JSON.parse(readFileSync(entered, 'utf8')), { stale: false });
   assert.deepEqual(JSON.parse(readFileSync(drained, 'utf8')), { stoppedBeforeModel: true });
