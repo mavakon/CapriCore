@@ -64,12 +64,14 @@ const RESERVED =
 const SHA256 = /^[a-f0-9]{64}$/;
 
 export function macosLocations({ home = os.homedir(), bundleIdentifier } = {}) {
-  if (!path.isAbsolute(home)) throw new Error('The home folder must be an absolute path.');
+  // macOS paths, whichever system runs the build or the tests.
+  const { isAbsolute, join } = path.posix;
+  if (!isAbsolute(home)) throw new Error('The home folder must be an absolute path.');
   return Object.freeze({
-    root: path.join(home, 'Library', 'Application Support', 'Capri'),
-    logs: path.join(home, 'Library', 'Logs', 'Capri'),
+    root: join(home, 'Library', 'Application Support', 'Capri'),
+    logs: join(home, 'Library', 'Logs', 'Capri'),
     ...(bundleIdentifier && {
-      launcherProfile: path.join(home, 'Library', 'Caches', bundleIdentifier, 'Launcher'),
+      launcherProfile: join(home, 'Library', 'Caches', bundleIdentifier, 'Launcher'),
     }),
   });
 }

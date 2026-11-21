@@ -86,6 +86,10 @@ const temporary = (t, name = 'capri-mac-') => {
   t.after(() => rmSync(folder, { recursive: true, force: true }));
   return folder;
 };
+const WINDOWS = process.platform === 'win32';
+/** Windows has no execute permission bit, so payload manifests record 0o644 there. */
+const EXECUTABLE = WINDOWS ? 0o644 : 0o755;
+
 const M4_PRO = Object.freeze({
   platform: 'darwin',
   arch: 'arm64',
@@ -218,10 +222,8 @@ test('first launch installs the payload and claims the folder', async (t) => {
   assert.equal(result.fresh, true);
   assert.equal(result.copied, 3);
   assert.equal(readFileSync(path.join(root, 'apps/desktop/main.mjs'), 'utf8'), 'main');
-  assert.equal(
-    statSync(path.join(root, '.runtime/node-v24.22.1-darwin-arm64/bin/node')).mode & 0o777,
-    0o755,
-  );
+  const node = statSync(path.join(root, '.runtime/node-v24.22.1-darwin-arm64/bin/node')).mode;
+  if (!WINDOWS) assert.equal(node & 0o777, 0o755);
   const identity = JSON.parse(readFileSync(path.join(root, '.capri-install.json'), 'utf8'));
   assert.equal(identity.productId, 'capri.desktop');
   assert.equal(identity.root, root);
@@ -405,7 +407,7 @@ test('the build lists regular files only, with their modes, in a stable order', 
   assert.deepEqual(
     manifest.files.map(([name, size, , mode]) => [name, size, mode]),
     [
-      ['a/run.sh', 9, 0o755],
+      ['a/run.sh', 9, EXECUTABLE],
       ['b.txt', 1, 0o644],
     ],
   );
@@ -622,25 +624,36 @@ test('disk image staging verifies the bundle before copying it next to the app',
   assert.equal(LEFTOVER.test('Capri.app'), false);
 });
 
-test('the swap script replaces the app after Capri exits and restores it on failure', (t) => {
+test(
+  'the swap script replaces the app after Capri exits and restores it on failure',
+  { skip: WINDOWS && 'the swap runs in /bin/sh, which Windows does not have' },
+  (t) => {
+    const base = temporary(t);
+    const app = path.join(base, 'Capri.app');
+    const staged = path.join(base, '.Capri-update-1.app');
+    const backup = path.join(base, '.Capri-previous-1.app');
+    mkdirSync(app);
+    writeFileSync(path.join(app, 'version'), 'old');
+    mkdirSync(staged);
+    writeFileSync(path.join(staged, 'version'), 'new');
+    const ended = spawnSync(process.execPath, ['-e', '0']).pid;
+    // `open` does not exist here; the swap itself completes before it runs.
+    spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
+    assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
+    assert.equal(existsSync(staged), false);
+    assert.equal(existsSync(backup), false);
+    // A staged copy that cannot move into place leaves the old app where it was.
+    spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
+    assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
+    assert.equal(existsSync(backup), false);
+  },
+);
+
+test('the swap starts detached with absolute paths and a real process id', (t) => {
   const base = temporary(t);
   const app = path.join(base, 'Capri.app');
   const staged = path.join(base, '.Capri-update-1.app');
   const backup = path.join(base, '.Capri-previous-1.app');
-  mkdirSync(app);
-  writeFileSync(path.join(app, 'version'), 'old');
-  mkdirSync(staged);
-  writeFileSync(path.join(staged, 'version'), 'new');
-  const ended = spawnSync(process.execPath, ['-e', '0']).pid;
-  // `open` does not exist here; the swap itself completes before it runs.
-  spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
-  assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
-  assert.equal(existsSync(staged), false);
-  assert.equal(existsSync(backup), false);
-  // A staged copy that cannot move into place leaves the old app where it was.
-  spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
-  assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
-  assert.equal(existsSync(backup), false);
   const spawned = [];
   launchMacosSwap({
     pid: 42,
@@ -653,6 +666,7 @@ test('the swap script replaces the app after Capri exits and restores it on fail
   assert.deepEqual(spawned[0][1].slice(3), ['42', app, staged, backup]);
   assert.equal(spawned[0][2].detached, true);
   assert.throws(() => launchMacosSwap({ pid: 0, appPath: app, staged, backup }));
+  assert.throws(() => launchMacosSwap({ pid: 42, appPath: 'Capri.app', staged, backup }));
 });
 
 test('setup requests accept only the choices the window offers', () => {
@@ -759,7 +773,7 @@ function setupFixture(t) {
   const commands = [];
   const execute = async (file, args, { output }) => {
     const [script, ...rest] = args;
-    const name = path.relative(root, script) + ' ' + rest.join(' ');
+    const name = path.relative(root, script).split(path.sep).join('/') + ' ' + rest.join(' ');
     commands.push(name.trim());
     if (rest[0] === 'setup') {
       const local = JSON.parse(readFileSync(path.join(root, 'config/core.local.json'), 'utf8'));
