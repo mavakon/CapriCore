@@ -169,14 +169,23 @@ function installDependencies(payload, { node, npm }) {
     npm_config_update_notifier: 'false',
   };
   run(node, [npm, 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: payload, env });
-  // Links are npm workspace and .bin shims; the app copies regular files only.
+  // Symbolic links are npm workspace and .bin shims; the app copies regular
+  // files only. Hard links come from install scripts (esbuild links its
+  // platform binary into place): give each name its own copy.
   let links = 0;
+  let hardLinks = 0;
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isSymbolicLink()) {
         unlinkSync(file);
         links++;
+      } else if (entry.isFile() && lstatSync(file).nlink > 1) {
+        const copy = file + '.capri-copy';
+        copyFileSync(file, copy);
+        chmodSync(copy, lstatSync(file).mode & 0o777);
+        renameSync(copy, file);
+        hardLinks++;
       } else if (entry.isDirectory()) {
         const name = path.relative(payload, file).split(path.sep).join('/');
         if (!shippedDependency(name)) rmSync(file, { recursive: true, force: true });
@@ -187,7 +196,9 @@ function installDependencies(payload, { node, npm }) {
   walk(path.join(payload, 'node_modules'));
   for (const name of readdirSync(payload, { recursive: true, withFileTypes: true }))
     if (name.name === '.DS_Store') rmSync(path.join(name.parentPath, name.name), { force: true });
-  log(`installed production dependencies (${links} links left out).`);
+  log(
+    `installed production dependencies (${links} links left out, ${hardLinks} hard links copied).`,
+  );
 }
 
 function plutil(plist, changes) {
