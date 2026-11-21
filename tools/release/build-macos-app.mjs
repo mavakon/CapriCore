@@ -57,6 +57,7 @@ import {
   llamaBundleDirectory,
 } from '../../packages/runtime/src/host/platform.mjs';
 import { llamaBundleReady } from '../../packages/runtime/src/host/llama-bundle.mjs';
+import { buildHelpers } from './macos-helpers.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const read = (file) => JSON.parse(readFileSync(path.join(root, file), 'utf8'));
@@ -294,6 +295,7 @@ async function main() {
   const tools = await installNode(cache, payload);
   await installLlama(cache, payload);
   installDependencies(payload, tools);
+  await buildHelpers({ root, payload, run, log });
 
   log('hashing the payload.');
   const manifest = await payloadManifest(payload, { version, commit });

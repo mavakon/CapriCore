@@ -121,7 +121,6 @@ export class UpdateService {
       } catch {
         /* A source checkout is never overwritten by the updater. */
       }
-    this.assetKind = this.mac ? 'macos' : this.mode === 'managed' ? 'source' : 'installer';
     this.repository = this.mac ? MACOS_REPOSITORY : REPOSITORY;
     this.value = {
       phase: 'idle',
@@ -142,6 +141,10 @@ export class UpdateService {
     this.startupSuperseded = false;
     this.deferredTags = new Set();
     this.closed = false;
+  }
+  /** Release file this installation updates from. */
+  get assetKind() {
+    return this.mac ? 'macos' : this.mode === 'managed' ? 'source' : 'installer';
   }
   snapshot() {
     return structuredClone(this.value);
