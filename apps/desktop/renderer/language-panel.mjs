@@ -7,6 +7,10 @@ import {
   validateLanguages,
 } from './language-settings.mjs';
 import { prepareInterfaceLocale } from './interface-translations.mjs';
+import { macHost } from './host-platform.mjs';
+
+export const MAC_VOICE_INSTALL_HELP =
+  'Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.';
 
 export class LanguagePanel {
   constructor({ api, ui, onChange, onOpen, onError, confirm }) {
@@ -212,7 +216,9 @@ export class LanguagePanel {
     document.getElementById('language-install-details').hidden = !offerVoice && !offerRecognition;
     document.getElementById('language-install-help').textContent = this.ui.text(
       offerVoice
-        ? 'Setup installs the voice for your Conversation language automatically. English uses the included Capri voice; other supported languages use one multilingual model (BETA). No separate voice ZIP is needed. NVIDIA CUDA or a supported AMD ROCm GPU on Windows 11 is required. AMD support is experimental.'
+        ? macHost()
+          ? MAC_VOICE_INSTALL_HELP
+          : 'Setup installs the voice for your Conversation language automatically. English uses the included Capri voice; other supported languages use one multilingual model (BETA). No separate voice ZIP is needed. NVIDIA CUDA or a supported AMD ROCm GPU on Windows 11 is required. AMD support is experimental.'
         : 'Downloads only the missing recognition components. Existing downloads are reused.',
     );
     this.renderInstallation();

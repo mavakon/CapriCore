@@ -8,6 +8,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { ASRWorker } from '../apps/desktop/asr-worker.mjs';
 import { recognitionModelsInstalled } from '../apps/desktop/language-models.mjs';
+import { venvPythonRelative } from '../packages/runtime/src/host/python-env.mjs';
 import settings from '../config/companion-asr.json' with { type: 'json' };
 import candidates from '../config/multilingual-candidates.json' with { type: 'json' };
 import detector from '../config/asr-vad-upstream.json' with { type: 'json' };
@@ -24,7 +25,7 @@ function fixture(t) {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, content);
   };
-  file('.runtime/asr-venv/Scripts/python.exe', 'fixture');
+  file(venvPythonRelative('asr-venv'), 'fixture');
   const child = new EventEmitter();
   for (const channel of ['stdin', 'stdout', 'stderr']) child[channel] = new PassThrough();
   child.kill = () => {};

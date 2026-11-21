@@ -2475,6 +2475,9 @@
     "Vertical": "Vertical",
     "Horizontal": "Horizontal",
     "I could not verify that YouTube opened. Check the page in the browser.": "I could not verify that YouTube opened. Check the page in the browser.",
-    "No supported browser was found to open YouTube.": "No supported browser was found to open YouTube."
+    "No supported browser was found to open YouTube.": "No supported browser was found to open YouTube.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU."
   }
 }

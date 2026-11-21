@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { LANGUAGE_PACKS } from './renderer/language-settings.mjs';
+import { venvPython } from '../../packages/runtime/src/host/python-env.mjs';
 
 const reportedStartupCodes = new Set([
   'ASR_START_DEPENDENCIES',
@@ -19,6 +20,20 @@ const nativeStartupCodes = new Map([
   [0xc0000139, 'ASR_START_NATIVE_DLL'],
   [0xc0000142, 'ASR_START_NATIVE_DLL'],
 ]);
+// macOS and Linux report a native crash as a terminating signal instead of an NTSTATUS.
+const nativeStartupSignals = new Map([
+  ['SIGILL', 'ASR_START_NATIVE_INSTRUCTION'],
+  ['SIGSEGV', 'ASR_START_NATIVE_CRASH'],
+  ['SIGBUS', 'ASR_START_NATIVE_CRASH'],
+]);
+export const nativeStartupCode = (status, signal) =>
+  (signal ? nativeStartupSignals.get(signal) : nativeStartupCodes.get(status >>> 0)) ??
+  'ASR_START_EXIT';
+/** Variables the worker inherits; nothing else from the desktop's environment reaches Python. */
+export const ASR_ENVIRONMENT = Object.freeze({
+  win32: ['SystemRoot', 'WINDIR', 'PATH', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA'],
+  darwin: ['PATH', 'HOME', 'TMPDIR', 'USER', 'LANG'],
+});
 const workerStopped = 'The local speech recognizer stopped. Restart the microphone.';
 const startupRepair =
   'Speech recognition could not start. Check the selected language and setup-multilingual.cmd.';
@@ -43,9 +58,9 @@ const asrError = (code, startupStage) =>
 
 /** An owned CPU worker over private stdio, never a renderer-accessible server. */
 export class ASRWorker extends EventEmitter {
-  constructor({ root, spawnImpl = spawn, language = 'en' }) {
+  constructor({ root, spawnImpl = spawn, language = 'en', platform = process.platform }) {
     super();
-    Object.assign(this, { root, spawnImpl, language });
+    Object.assign(this, { root, spawnImpl, language, platform });
     this.child = null;
     this.pending = new Map();
     this.requestId = 0;
@@ -77,10 +92,10 @@ export class ASRWorker extends EventEmitter {
   }
   async startAttempt(safeStartup = false) {
     if (this.ready) return this.ready;
-    const python = path.join(this.root, '.runtime/asr-venv/Scripts/python.exe');
+    const python = venvPython(this.root, 'asr-venv', this.platform);
     if (!existsSync(python)) throw asrError('ASR_START_PYTHON');
     const env = Object.fromEntries(
-      ['SystemRoot', 'WINDIR', 'PATH', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA']
+      (ASR_ENVIRONMENT[this.platform] ?? ASR_ENVIRONMENT.win32)
         .filter((name) => process.env[name])
         .map((name) => [name, process.env[name]]),
     );
@@ -146,12 +161,8 @@ export class ASRWorker extends EventEmitter {
     armStartup(60000);
     child.on('error', () => fail(this.rejectStart ? 'ASR_START_SPAWN' : 'ASR_WORKER_IO'));
     // Wait for stdout to close so a startup-error record can arrive before the exit status.
-    child.on('close', (status) =>
-      fail(
-        this.rejectStart
-          ? (nativeStartupCodes.get(status >>> 0) ?? 'ASR_START_EXIT')
-          : 'ASR_WORKER_EXIT',
-      ),
+    child.on('close', (status, signal) =>
+      fail(this.rejectStart ? nativeStartupCode(status, signal) : 'ASR_WORKER_EXIT'),
     );
     child.stdin.on('error', () => fail(this.rejectStart ? 'ASR_START_IO' : 'ASR_WORKER_IO'));
     child.stderr.on('data', () => {}); // Diagnostics must never echo captured speech.

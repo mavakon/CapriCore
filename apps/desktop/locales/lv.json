@@ -2477,7 +2477,10 @@
     "Vertical": "Vertikāls",
     "Horizontal": "Horizontāls",
     "I could not verify that YouTube opened. Check the page in the browser.": "Nevarēju apstiprināt, ka YouTube tika atvērts. Pārbaudi lapu pārlūkprogrammā.",
-    "No supported browser was found to open YouTube.": "Netika atrasta atbalstīta pārlūkprogramma YouTube atvēršanai."
+    "No supported browser was found to open YouTube.": "Netika atrasta atbalstīta pārlūkprogramma YouTube atvēršanai.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Piekļuve mikrofonam tika liegta. Atļaujiet Capri sadaļā System Settings → Privacy & Security → Microphone.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Balss apmācībai nepieciešams NVIDIA GPU operētājsistēmā Windows. Tā nav pieejama macOS.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Iestatīšana automātiski instalē balsi jūsu sarunas valodai. Mac datorā balss izmanto Apple GPU (Metal) un vajadzības gadījumā pārslēdzas uz CPU."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

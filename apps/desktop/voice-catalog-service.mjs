@@ -21,7 +21,12 @@ import { privateLogRecord } from '../../packages/runtime/src/privacy-log.mjs';
 import { writePrivateBytesAtomic } from '../../packages/runtime/src/safe-file.mjs';
 import { probeHardware } from '../../packages/runtime/src/hardware/probe.mjs';
 import { voiceRocmSupported } from '../../packages/runtime/src/hardware/voice-gpu.mjs';
-import { voiceRuntimeEnvironment } from '../../integrations/voice_runtime/environment.mjs';
+import {
+  voicePlatformEnvironment,
+  voiceRuntimeEnvironment,
+} from '../../integrations/voice_runtime/environment.mjs';
+import { venvPython } from '../../packages/runtime/src/host/python-env.mjs';
+import { runMacSpeechComponent } from '../../packages/installer/src/macos-speech.mjs';
 import {
   installBreezeTts,
   installedBreezeTts,
@@ -43,7 +48,9 @@ const voiceDefaults = {
   ),
 };
 
-function qwenGpuRuntime(root, backend) {
+function qwenGpuRuntime(root, backend, platform = process.platform) {
+  // NVIDIA CUDA and AMD ROCm Qwen runtimes exist only on Windows.
+  if (platform === 'darwin') return null;
   try {
     const folder = `.runtime/qwen-tts-${backend}-venv`;
     const receipt = readJson(voiceDataPath(root, `${folder}/${backend}-ready.json`));
@@ -92,6 +99,14 @@ export function qwenVoiceFilesInstalled(root, configRoot, model) {
   const spec = qwenVoiceSpec(configRoot, model);
   const groups = model.id === RUSSIAN_QWEN_ID ? [spec, spec.accent, spec.pack] : [spec];
   return groups.every((group) => voiceFilesInstalled(root, group));
+}
+
+/** A Mac installer inherits only these; tokens and index overrides never reach uv or Python. */
+function macInstallerEnvironment(inherited = process.env) {
+  const env = {};
+  for (const key of ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG'])
+    if (inherited[key]) env[key] = inherited[key];
+  return env;
 }
 
 function installFailure(error, stage) {
@@ -157,28 +172,29 @@ export function selectedVoiceModel(root, language, configRoot = root) {
   return model;
 }
 
-export function voiceRuntimes(root, model) {
+export function voiceRuntimes(root, model, platform = process.platform) {
   if (model.backend === 'breeze-tts') return [];
   if (model.backend !== 'qwen3-tts')
     return [
       {
-        python: path.join(root, '.runtime/voice-training-venv/Scripts/python.exe'),
-        env: voiceRuntimeEnvironment(root),
+        python: venvPython(root, 'voice-training-venv', platform),
+        env: { ...voiceRuntimeEnvironment(root), ...voicePlatformEnvironment(platform) },
       },
     ];
   return [
-    ...(model.id === RUSSIAN_QWEN_ID ? [qwenGpuRuntime(root, 'cuda')] : []),
-    qwenGpuRuntime(root, 'rocm'),
+    ...(model.id === RUSSIAN_QWEN_ID ? [qwenGpuRuntime(root, 'cuda', platform)] : []),
+    qwenGpuRuntime(root, 'rocm', platform),
     {
+      // On macOS this one runtime also uses the Apple GPU when PyTorch can.
       backend: 'cpu',
-      python: path.join(root, '.runtime/qwen-tts-venv/Scripts/python.exe'),
-      env: {},
+      python: venvPython(root, 'qwen-tts-venv', platform),
+      env: voicePlatformEnvironment(platform),
     },
   ].filter(Boolean);
 }
 
-export function voiceRuntime(root, model, deviceKey = 'auto') {
-  const runtimes = voiceRuntimes(root, model);
+export function voiceRuntime(root, model, deviceKey = 'auto', platform = process.platform) {
+  const runtimes = voiceRuntimes(root, model, platform);
   if (deviceKey === 'auto' || model.backend !== 'qwen3-tts') return runtimes[0];
   const runtime = runtimes.find(({ backend }) => backend === deviceKey.split(':', 1)[0]);
   if (!runtime)
@@ -188,8 +204,18 @@ export function voiceRuntime(root, model, deviceKey = 'auto') {
   return runtime;
 }
 
-export function voicePython(root, model) {
-  return voiceRuntime(root, model).python;
+/**
+ * Devices a catalog voice can use on this host. A Mac runs every PyTorch voice
+ * (Chatterbox and Qwen) on its Apple GPU through Metal or on the CPU; the CUDA
+ * and ROCm builds are Windows-only. Breeze stays listed as Windows-only.
+ */
+export function platformVoiceDevices(model, platform = process.platform) {
+  if (platform !== 'darwin' || model.backend === 'breeze-tts') return model.devices;
+  return ['cpu', 'mps'];
+}
+
+export function voicePython(root, model, platform = process.platform) {
+  return voiceRuntime(root, model, 'auto', platform).python;
 }
 
 /** Cross-family switches must restart Python; its dependency sets are isolated. */
@@ -215,6 +241,9 @@ export class VoiceCatalogService {
       ),
     ownerStamp = () => processStartedAt(process.pid),
     installBreeze = installBreezeTts,
+    platform = process.platform,
+    arch = process.arch,
+    macInstall = runMacSpeechComponent,
   }) {
     Object.assign(this, {
       root,
@@ -227,6 +256,9 @@ export class VoiceCatalogService {
       prepare,
       ownerStamp,
       installBreeze,
+      platform,
+      arch,
+      macInstall,
     });
     this.models = readJson(path.join(configRoot, 'config/tts-catalog.json')).models;
     this.applying = false;
@@ -250,7 +282,7 @@ export class VoiceCatalogService {
       const profile = voiceDataPath(this.root, companion.profileDir);
       if (
         !existsSync(path.join(profile, 'voice-profile.json')) ||
-        !existsSync(voicePython(this.root, model))
+        !existsSync(voicePython(this.root, model, this.platform))
       )
         return false;
       if (model.id === 'chatterbox-turbo') {
@@ -277,16 +309,24 @@ export class VoiceCatalogService {
       ...this.value,
       phase: this.applying ? 'applying' : this.value.phase,
       selections,
-      russianQwenCudaReady: Boolean(qwenGpuRuntime(this.root, 'cuda')),
-      qwenRocmReady: Boolean(qwenGpuRuntime(this.root, 'rocm')),
+      russianQwenCudaReady: Boolean(qwenGpuRuntime(this.root, 'cuda', this.platform)),
+      qwenRocmReady: Boolean(qwenGpuRuntime(this.root, 'rocm', this.platform)),
       qwenRocmSupported: this.qwenRocmSupported === true,
-      breezeSupported: process.platform === 'win32' && process.arch === 'x64',
+      // NVIDIA and AMD Qwen installers are Windows-only; a Mac uses its Apple GPU.
+      qwenAccelerationSupported: this.platform !== 'darwin',
+      appleGpu: this.platform === 'darwin' && this.arch === 'arm64',
+      breezeSupported: this.platform === 'win32' && this.arch === 'x64',
       breezeVoice: breeze ? { name: breeze.name } : null,
-      models: this.models.map((model) => ({ ...model, installed: this.installed(model) })),
+      models: this.models.map((model) => ({
+        ...model,
+        devices: platformVoiceDevices(model, this.platform),
+        installed: this.installed(model),
+      })),
       defaults: voiceDefaults,
     };
   }
   async refresh() {
+    if (this.platform === 'darwin') this.qwenRocmSupported = false;
     this.qwenRocmSupported ??= await Promise.resolve()
       .then(() => this.hardware())
       .then(voiceRocmSupported)
@@ -356,7 +396,7 @@ export class VoiceCatalogService {
     );
     if (model?.backend === 'breeze-tts') {
       if (acceptLicense !== true) throw new Error('Accept the Breeze TTS 2 model license.');
-      if (process.platform !== 'win32' || process.arch !== 'x64')
+      if (this.platform !== 'win32' || this.arch !== 'x64')
         throw new Error('Breeze TTS 2 requires Windows x64 with AVX2.');
       if (this.root !== this.configRoot)
         throw new Error('Installation is unavailable in interface verification.');
@@ -364,6 +404,10 @@ export class VoiceCatalogService {
     }
     if (!model || model.backend !== 'qwen3-tts')
       throw new Error('Use Install and enable in Languages for the Chatterbox voice models.');
+    if (this.platform === 'darwin' && (cuda === true || rocm === true))
+      throw new Error(
+        'NVIDIA and AMD acceleration are not available on macOS. Qwen uses the Apple GPU.',
+      );
     if (
       typeof cuda !== 'boolean' ||
       typeof rocm !== 'boolean' ||
@@ -418,109 +462,135 @@ export class VoiceCatalogService {
         controller.signal.throwIfAborted();
         await this.beforeChange();
         controller.signal.throwIfAborted();
-        const env = {};
-        for (const key of [
-          'SystemRoot',
-          'WINDIR',
-          'PATH',
-          'USERPROFILE',
-          'LOCALAPPDATA',
-          'APPDATA',
-          'ProgramFiles',
-          'PROGRAMFILES(X86)',
-          'COMSPEC',
-        ])
-          if (process.env[key]) env[key] = process.env[key];
-        Object.assign(env, {
-          // Windows PowerShell uses PATHEXT to recognize native executables.
-          // Without it `& python.exe --version` returns a Process object rather
-          // than captured output, causing a false interpreter-version failure.
-          PATHEXT: '.COM;.EXE;.BAT;.CMD',
-          UV_NO_CONFIG: '1',
-          UV_CACHE_DIR: path.join(this.root, '.runtime/uv-cache'),
-          TEMP: path.join(this.root, '.runtime/tmp'),
-          TMP: path.join(this.root, '.runtime/tmp'),
-          HF_HUB_DISABLE_TELEMETRY: '1',
-          PYTHONUTF8: '1',
-          PYTHONIOENCODING: 'utf-8',
-          PYTHONNOUSERSITE: '1',
-        });
-        noLinks(env.TEMP);
-        mkdirSync(env.TEMP, { recursive: true });
-        await this.prepare({ root: this.root, env, signal: controller.signal, execute: this.run });
-        controller.signal.throwIfAborted();
-        const stamp = this.ownerStamp();
-        if (!/^[0-9]+$/.test(stamp ?? ''))
-          throw new Error('The speech installer owner could not be verified.');
-        const script = voiceDataPath(this.root, 'tools/setup/owned-speech.ps1');
-        await this.run(
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-File',
-            script,
-            '-Component',
+        const stageLine = (line) => {
+          try {
+            const { stage, progress, received, total } = JSON.parse(line);
+            if (
+              acceleration &&
+              [
+                `${acceleration}-connect`,
+                `${acceleration}-download`,
+                `${acceleration}-retry`,
+              ].includes(stage)
+            ) {
+              if (
+                Number.isSafeInteger(received) &&
+                Number.isSafeInteger(total) &&
+                total > 0 &&
+                received >= 0 &&
+                received <= total
+              )
+                this.publish({ stage, progress: { received, total } });
+            } else if (
+              ['python', 'dependencies', 'models', 'verify', `${acceleration}-prepare`].includes(
+                stage,
+              )
+            ) {
+              this.publish({
+                stage,
+                progress: stage === 'models' && Number.isFinite(progress) ? progress : null,
+              });
+            }
+          } catch {}
+        };
+        if (this.platform === 'darwin') {
+          await this.prepare({
+            root: this.root,
+            signal: controller.signal,
+            execute: this.run,
+            platform: 'darwin',
+          });
+          controller.signal.throwIfAborted();
+          await this.macInstall(
             'qwen',
-            '-OwnerPid',
-            String(process.pid),
-            '-OwnerStamp',
-            stamp,
-            '-ArgumentsBase64',
-            Buffer.from(
-              JSON.stringify([
-                ...(modelId === RUSSIAN_QWEN_ID ? ['-Russian'] : []),
-                ...(cuda ? ['-Cuda'] : []),
-                ...(rocm ? ['-Rocm'] : []),
-              ]),
-            ).toString('base64'),
-          ],
-          {
-            cwd: this.root,
+            { russian: modelId === RUSSIAN_QWEN_ID },
+            {
+              root: this.root,
+              signal: controller.signal,
+              execute: this.run,
+              baseEnv: macInstallerEnvironment(),
+              output: stageLine,
+            },
+          );
+        } else {
+          const env = {};
+          for (const key of [
+            'SystemRoot',
+            'WINDIR',
+            'PATH',
+            'USERPROFILE',
+            'LOCALAPPDATA',
+            'APPDATA',
+            'ProgramFiles',
+            'PROGRAMFILES(X86)',
+            'COMSPEC',
+          ])
+            if (process.env[key]) env[key] = process.env[key];
+          Object.assign(env, {
+            // Windows PowerShell uses PATHEXT to recognize native executables.
+            // Without it `& python.exe --version` returns a Process object rather
+            // than captured output, causing a false interpreter-version failure.
+            PATHEXT: '.COM;.EXE;.BAT;.CMD',
+            UV_NO_CONFIG: '1',
+            UV_CACHE_DIR: path.join(this.root, '.runtime/uv-cache'),
+            TEMP: path.join(this.root, '.runtime/tmp'),
+            TMP: path.join(this.root, '.runtime/tmp'),
+            HF_HUB_DISABLE_TELEMETRY: '1',
+            PYTHONUTF8: '1',
+            PYTHONIOENCODING: 'utf-8',
+            PYTHONNOUSERSITE: '1',
+          });
+          noLinks(env.TEMP);
+          mkdirSync(env.TEMP, { recursive: true });
+          await this.prepare({
+            root: this.root,
             env,
             signal: controller.signal,
-            timeoutMs: 2 * 60 * 60 * 1000,
-            output: (line) => {
-              try {
-                const { stage, progress, received, total } = JSON.parse(line);
-                if (
-                  acceleration &&
-                  [
-                    `${acceleration}-connect`,
-                    `${acceleration}-download`,
-                    `${acceleration}-retry`,
-                  ].includes(stage)
-                ) {
-                  if (
-                    Number.isSafeInteger(received) &&
-                    Number.isSafeInteger(total) &&
-                    total > 0 &&
-                    received >= 0 &&
-                    received <= total
-                  )
-                    this.publish({ stage, progress: { received, total } });
-                } else if (
-                  [
-                    'python',
-                    'dependencies',
-                    'models',
-                    'verify',
-                    `${acceleration}-prepare`,
-                  ].includes(stage)
-                ) {
-                  this.publish({
-                    stage,
-                    progress: stage === 'models' && Number.isFinite(progress) ? progress : null,
-                  });
-                }
-              } catch {}
+            execute: this.run,
+          });
+          controller.signal.throwIfAborted();
+          const stamp = this.ownerStamp();
+          if (!/^[0-9]+$/.test(stamp ?? ''))
+            throw new Error('The speech installer owner could not be verified.');
+          const script = voiceDataPath(this.root, 'tools/setup/owned-speech.ps1');
+          await this.run(
+            'powershell.exe',
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              script,
+              '-Component',
+              'qwen',
+              '-OwnerPid',
+              String(process.pid),
+              '-OwnerStamp',
+              stamp,
+              '-ArgumentsBase64',
+              Buffer.from(
+                JSON.stringify([
+                  ...(modelId === RUSSIAN_QWEN_ID ? ['-Russian'] : []),
+                  ...(cuda ? ['-Cuda'] : []),
+                  ...(rocm ? ['-Rocm'] : []),
+                ]),
+              ).toString('base64'),
+            ],
+            {
+              cwd: this.root,
+              env,
+              signal: controller.signal,
+              timeoutMs: 2 * 60 * 60 * 1000,
+              output: stageLine,
             },
-          },
-        );
+          );
+        }
         controller.signal.throwIfAborted();
-        if (!this.installed(model) || (acceleration && !qwenGpuRuntime(this.root, acceleration)))
+        if (
+          !this.installed(model) ||
+          (acceleration && !qwenGpuRuntime(this.root, acceleration, this.platform))
+        )
           throw new Error('Voice installation could not be verified.');
         this.publish({ phase: 'ready', stage: null, progress: 100, error: null });
       })

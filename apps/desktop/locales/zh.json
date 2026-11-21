@@ -2477,7 +2477,10 @@
     "Vertical": "纵向",
     "Horizontal": "横向",
     "I could not verify that YouTube opened. Check the page in the browser.": "无法确认 YouTube 是否已打开。请在浏览器中检查页面。",
-    "No supported browser was found to open YouTube.": "未找到可用于打开 YouTube 的受支持浏览器。"
+    "No supported browser was found to open YouTube.": "未找到可用于打开 YouTube 的受支持浏览器。",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "麦克风访问被拒绝。请在“系统设置”→“隐私与安全性”→“麦克风”中允许 Capri。",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "语音训练需要 Windows 上的 NVIDIA GPU。macOS 上不可用。",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "安装程序会自动为您的对话语言安装语音。在 Mac 上，语音使用 Apple GPU（Metal），必要时改用 CPU。"
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

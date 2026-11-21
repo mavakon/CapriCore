@@ -25,6 +25,10 @@ import {
   readTrainingSettings,
 } from '../packages/runtime/src/voice-settings.mjs';
 
+// These cases exercise the Windows installer and runtime layout on every host;
+// tests/macos-voice.test.mjs covers the macOS paths.
+const platform = 'win32';
+
 function fixture(t) {
   const parent = path.resolve('.runtime/voice-library-tests');
   mkdirSync(parent, { recursive: true });
@@ -86,11 +90,11 @@ function result(write, jobId) {
 test('voice library persists independent supported languages and stops speech before switching', async (t) => {
   const { root } = fixture(t);
   let stopped = 0;
-  const library = new VoiceCatalogService({ root, beforeChange: async () => stopped++ });
+  const library = new VoiceCatalogService({ platform, root, beforeChange: async () => stopped++ });
   assert.equal(library.snapshot().models.length, catalog.models.length);
   await library.select({ language: 'en', modelId: 'chatterbox-multilingual-v3' });
   await library.select({ language: 'ru', modelId: 'chatterbox-multilingual-v3' });
-  const restored = new VoiceCatalogService({ root }).snapshot();
+  const restored = new VoiceCatalogService({ platform, root }).snapshot();
   assert.equal(restored.selections.en, 'chatterbox-multilingual-v3');
   assert.equal(restored.selections.ru, 'chatterbox-multilingual-v3');
   assert.equal(stopped, 2);
@@ -108,8 +112,8 @@ test('Brazilian Portuguese uses its own Chatterbox weights and keeps the shared 
   assert.equal(brazilian.id, 'chatterbox-multilingual-pt-br');
   assert.equal(portuguese.id, 'chatterbox-multilingual-v3');
   assert.equal(voiceBackendChanged(root, 'pt', 'pt-BR'), true);
-  assert.equal(speechModelsInstalled(root, 'pt'), true);
-  assert.equal(speechModelsInstalled(root, 'pt-BR'), false);
+  assert.equal(speechModelsInstalled(root, 'pt', platform), true);
+  assert.equal(speechModelsInstalled(root, 'pt-BR', platform), false);
 
   const config = path.join(root, 'config/multilingual-runtime.json');
   const specs = JSON.parse(readFileSync(config, 'utf8'));
@@ -119,7 +123,7 @@ test('Brazilian Portuguese uses its own Chatterbox weights and keeps the shared 
   };
   write('config/multilingual-runtime.json', specs);
   write('data/speech/multilingual-pt-br/weights.safetensors', 'xyz');
-  assert.equal(speechModelsInstalled(root, 'pt-BR'), true);
+  assert.equal(speechModelsInstalled(root, 'pt-BR', platform), true);
 });
 
 test('Qwen installs in its own runtime and selected CPU voices do not require the CUDA environment', async (t) => {
@@ -131,6 +135,7 @@ test('Qwen installs in its own runtime and selected CPU voices do not require th
   let prepared = false,
     stopped = false;
   const library = new VoiceCatalogService({
+    platform,
     root,
     free: () => 20 * 1024 ** 3,
     ownerStamp: () => '123',
@@ -166,18 +171,19 @@ test('Qwen installs in its own runtime and selected CPU voices do not require th
   await library.select({ modelId: 'qwen3-tts-0.6b-base', language: 'en' });
   assert.equal(voiceBackendChanged(root, 'ru', 'en'), false);
   rmSync(path.join(root, '.runtime/voice-training-venv'), { recursive: true });
-  assert.equal(speechModelsInstalled(root, 'ru'), true);
-  assert.equal(speechModelsInstalled(root, 'en'), true);
+  assert.equal(speechModelsInstalled(root, 'ru', platform), true);
+  assert.equal(speechModelsInstalled(root, 'en', platform), true);
 });
 
 test('voice installation checks free space and cancellation releases the shared installer lock', async (t) => {
   const { root } = fixture(t);
-  const insufficient = new VoiceCatalogService({ root, free: () => 1 });
+  const insufficient = new VoiceCatalogService({ platform, root, free: () => 1 });
   assert.throws(
     () => insufficient.install({ modelId: 'qwen3-tts-0.6b-base', language: 'en' }),
     /space/i,
   );
   const library = new VoiceCatalogService({
+    platform,
     root,
     free: () => 20 * 1024 ** 3,
     ownerStamp: () => '123',
@@ -210,6 +216,7 @@ test('Russian LoRA requires its reference and accent files and keeps an independ
   write('config/qwen-tts-upstream.json', group('qwen'));
   write('data/speech/qwen/fixture', 'abc');
   const library = new VoiceCatalogService({
+    platform,
     root,
     free: () => 20 * 1024 ** 3,
     ownerStamp: () => '123',
@@ -252,9 +259,12 @@ test('Russian LoRA requires its reference and accent files and keeps an independ
   assert.equal(model().installed, true);
   await library.select({ modelId: 'qwen3-tts-0.6b-base', language: 'en' });
   await library.select({ modelId: RUSSIAN_QWEN_ID, language: 'ru' });
-  assert.equal(new VoiceCatalogService({ root }).snapshot().selections.ru, RUSSIAN_QWEN_ID);
+  assert.equal(
+    new VoiceCatalogService({ platform, root }).snapshot().selections.ru,
+    RUSSIAN_QWEN_ID,
+  );
   assert.equal(voiceBackendChanged(root, 'ru', 'en'), true);
-  assert.equal(speechModelsInstalled(root, 'ru'), true);
+  assert.equal(speechModelsInstalled(root, 'ru', platform), true);
   stages.length = 0;
   library.install({ modelId: RUSSIAN_QWEN_ID, language: 'ru', cuda: true });
   await library.task;
@@ -268,8 +278,8 @@ test('Russian LoRA requires its reference and accent files and keeps an independ
   ]);
   write('data/speech/accent/fixture', 'incomplete');
   assert.equal(model().installed, false);
-  assert.equal(speechModelsInstalled(root, 'ru'), false);
-  assert.equal(speechModelsInstalled(root, 'en'), true);
+  assert.equal(speechModelsInstalled(root, 'ru', platform), false);
+  assert.equal(speechModelsInstalled(root, 'en', platform), true);
 });
 
 test('Qwen ROCm installs as a shared runtime without replacing CPU or CUDA', async (t) => {
@@ -288,6 +298,7 @@ test('Qwen ROCm installs as a shared runtime without replacing CPU or CUDA', asy
   write('.runtime/qwen-tts-cuda-venv/cuda-ready.json', { schemaVersion: 1, backend: 'cu128' });
   const options = {
     root,
+    platform,
     hardware: async () => ({ ...windows, gpus: [{ name: gpu }] }),
     free: () => 20 * 1024 ** 3,
     ownerStamp: () => '123',
@@ -318,15 +329,15 @@ test('Qwen ROCm installs as a shared runtime without replacing CPU or CUDA', asy
   assert.equal(installs, 1);
   assert.equal(library.snapshot().qwenRocmReady, true);
   assert.deepEqual(
-    voiceRuntimes(root, model).map(({ backend }) => backend),
+    voiceRuntimes(root, model, platform).map(({ backend }) => backend),
     ['rocm', 'cpu'],
   );
-  assert.equal(voiceRuntime(root, model).backend, 'rocm');
-  assert.equal(voiceRuntime(root, model, 'cpu').backend, 'cpu');
+  assert.equal(voiceRuntime(root, model, 'auto', platform).backend, 'rocm');
+  assert.equal(voiceRuntime(root, model, 'cpu', platform).backend, 'cpu');
   const russian = catalog.models.find(({ id }) => id === RUSSIAN_QWEN_ID);
-  assert.equal(voiceRuntime(root, russian).backend, 'cuda');
+  assert.equal(voiceRuntime(root, russian, 'auto', platform).backend, 'cuda');
   assert.equal(
-    voiceRuntime(root, russian, 'rocm:1:0000000000000000').env.ROCM_SDK_TARGET_FAMILY,
+    voiceRuntime(root, russian, 'rocm:1:0000000000000000', platform).env.ROCM_SDK_TARGET_FAMILY,
     'custom',
   );
 });
@@ -360,6 +371,7 @@ test(
     });
     let verified = false;
     const library = new VoiceCatalogService({
+      platform,
       root,
       free: () => 20 * 1024 ** 3,
       ownerStamp: () => '123',
@@ -388,6 +400,7 @@ test('Qwen failure diagnostics retain the stage and fixed reason without raw out
   const { root } = fixture(t);
   const canary = 'PRIVATE-ERROR-TEXT-credential-983174';
   const library = new VoiceCatalogService({
+    platform,
     root,
     free: () => 20 * 1024 ** 3,
     ownerStamp: () => '123',
@@ -433,6 +446,7 @@ test('choosing recordings drafts text without approving it and commits the revie
   rows[0].sha256 = createHash('sha256').update(sample).digest('hex');
   let imported;
   const service = new VoiceTrainingService({
+    platform,
     root,
     draftRun: async (input) => {
       assert.equal(input.source, source);
@@ -485,6 +499,7 @@ test('dataset import changes only the validated dataset after success and expose
   const source = path.join(root, 'reviewed-input');
   mkdirSync(source);
   const service = new VoiceTrainingService({
+    platform,
     root,
     importRun: async ({ importId }) => {
       write('data/voices/capri/en/imports/' + importId + '/import-receipt.json', {
@@ -505,6 +520,7 @@ test('dataset import changes only the validated dataset after success and expose
   assert.equal(service.snapshot().available, true);
   assert.ok(!JSON.stringify(service.snapshot()).includes(source));
   const failed = new VoiceTrainingService({
+    platform,
     root,
     importRun: async () => {
       throw new Error('invalid');
@@ -521,6 +537,7 @@ test('dataset import changes only the validated dataset after success and expose
 test('voice switch failure preserves saved selection and missing weights remain unselectable', async (t) => {
   const { root, write } = fixture(t);
   const library = new VoiceCatalogService({
+    platform,
     root,
     beforeChange: async () => {
       throw new Error('busy');
@@ -544,6 +561,7 @@ test('one-click training produces a preview candidate and applies only on explic
   const phases = [];
   let stopped = 0;
   const service = new VoiceTrainingService({
+    platform,
     root,
     before: async () => stopped++,
     emit: (event) => phases.push(event.phase),
@@ -575,6 +593,7 @@ test('one-click training produces a preview candidate and applies only on explic
 test('cancellation stops the worker and permits a later training run', async (t) => {
   const { root } = fixture(t);
   const service = new VoiceTrainingService({
+    platform,
     root,
     run: async ({ signal }) =>
       new Promise((resolve, reject) =>
@@ -594,7 +613,7 @@ test('cancellation stops the worker and permits a later training run', async (t)
 
 test('training cannot use unsupported model recipes or provisional datasets', (t) => {
   const { root, write } = fixture(t);
-  const service = new VoiceTrainingService({ root });
+  const service = new VoiceTrainingService({ platform, root });
   assert.throws(
     () => service.start({ modelId: 'chatterbox-multilingual-v3', language: 'ru' }),
     /compatible fine-tuning/,
@@ -616,6 +635,7 @@ test('failed activation rolls the voice profile back and retains the candidate',
   };
   write('data/speech/voice-selections.json', previousSelections);
   const service = new VoiceTrainingService({
+    platform,
     root,
     ready: async () => {
       throw new Error('warmup failed');
@@ -660,7 +680,7 @@ test('restored jobs report interruption and candidate path tampering is rejected
   const { root, write } = fixture(t);
   const jobId = '11111111-1111-1111-1111-111111111111';
   write('data/speech/voice-training-status.json', { phase: 'training', jobId });
-  assert.equal(new VoiceTrainingService({ root }).snapshot().phase, 'interrupted');
+  assert.equal(new VoiceTrainingService({ platform, root }).snapshot().phase, 'interrupted');
   result(write, jobId);
   write('data/speech/voice-training-status.json', { phase: 'review', jobId });
   write('data/speech/training-jobs/' + jobId + '/candidate.json', {
@@ -672,7 +692,7 @@ test('restored jobs report interruption and candidate path tampering is rejected
     preview: 'preview.wav',
     quality: 'requires-listening',
   });
-  const service = new VoiceTrainingService({ root });
+  const service = new VoiceTrainingService({ platform, root });
   assert.throws(() => service.preview(), /candidate is invalid/);
   await assert.rejects(service.apply(), /candidate is invalid/);
 });
@@ -681,6 +701,7 @@ test('concurrent service instances cannot start a second training worker', async
   const { root } = fixture(t);
   let finish;
   const service = new VoiceTrainingService({
+    platform,
     root,
     run: async ({ onProgress }) => {
       await new Promise((resolve) => (finish = resolve));
@@ -689,7 +710,7 @@ test('concurrent service instances cannot start a second training worker', async
   });
   service.start();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.throws(() => new VoiceTrainingService({ root }).start(), /already running/);
+  assert.throws(() => new VoiceTrainingService({ platform, root }).start(), /already running/);
   finish();
   await service.task;
 });

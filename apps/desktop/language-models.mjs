@@ -8,6 +8,7 @@ import detector from '../../config/asr-vad-upstream.json' with { type: 'json' };
 import candidates from '../../config/multilingual-candidates.json' with { type: 'json' };
 import multilingual from '../../config/multilingual-runtime.json' with { type: 'json' };
 import { LANGUAGE_PACKS } from './renderer/language-settings.mjs';
+import { venvPython, venvSitePackages } from '../../packages/runtime/src/host/python-env.mjs';
 import {
   selectedVoiceModel,
   voicePython,
@@ -22,7 +23,7 @@ export const ENGLISH_VOICE_SETUP_MESSAGE =
   'English voice is not installed. Open Languages and choose Install and enable. Capri downloads and installs everything automatically.';
 
 /** Cheap installation preflight; the Python backend still verifies file hashes before use. */
-export function speechModelsInstalled(root, language) {
+export function speechModelsInstalled(root, language, platform = process.platform) {
   if (language === 'off' || !LANGUAGE_PACKS.some((p) => p.id === language && p.speechReady))
     return false;
   try {
@@ -34,7 +35,7 @@ export function speechModelsInstalled(root, language) {
     if (
       !folder.startsWith(path.resolve(root) + path.sep) ||
       !existsSync(path.join(folder, 'voice-profile.json')) ||
-      !existsSync(voicePython(root, model))
+      !existsSync(voicePython(root, model, platform))
     )
       return false;
     if (model.backend === 'qwen3-tts') return qwenVoiceFilesInstalled(root, root, model);
@@ -99,7 +100,7 @@ export function speechModelsInstalled(root, language) {
   }
 }
 
-export function recognitionModelsInstalled(root, language, config) {
+export function recognitionModelsInstalled(root, language, config, platform = process.platform) {
   if (language === 'off') return false;
   try {
     const complete = (directory, files) =>
@@ -109,7 +110,7 @@ export function recognitionModelsInstalled(root, language, config) {
         return stat.isFile() && stat.size === bytes;
       });
     if (
-      !statSync(path.join(root, '.runtime/asr-venv/Scripts/python.exe')).isFile() ||
+      !statSync(venvPython(root, 'asr-venv', platform)).isFile() ||
       !complete(config.vad.modelDir, Object.values(detector.files))
     )
       return false;
@@ -123,7 +124,7 @@ export function recognitionModelsInstalled(root, language, config) {
     if (kind === 'parakeet-v2') return true;
     const { whisper } = multilingual;
     return (
-      existsSync(path.join(root, '.runtime/asr-venv/Lib/site-packages/faster_whisper')) &&
+      existsSync(path.join(venvSitePackages(root, 'asr-venv', { platform }), 'faster_whisper')) &&
       complete(whisper.directory, whisper.files)
     );
   } catch {

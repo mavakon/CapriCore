@@ -2486,7 +2486,10 @@
     "Check the pieces and confirm the side to move": "Vérifie les pièces et confirme le trait",
     "Switch to the window with the chessboard": "Passe à la fenêtre contenant l’échiquier",
     "Confirm the diagram or import a complete FEN": "Confirme le diagramme ou importe un FEN complet",
-    "Drag a square around the chessboard. Esc cancels.": "Trace un carré autour de l’échiquier. Échap annule."
+    "Drag a square around the chessboard. Esc cancels.": "Trace un carré autour de l’échiquier. Échap annule.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "L’accès au micro a été refusé. Autorisez Capri dans Réglages Système → Confidentialité et sécurité → Micro.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "L’entraînement de la voix nécessite un GPU NVIDIA sous Windows. Il n’est pas disponible sur macOS.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "L’installation configure automatiquement la voix pour la langue de conversation. Sur un Mac, la voix utilise le GPU Apple (Metal) et bascule sur le CPU si nécessaire."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

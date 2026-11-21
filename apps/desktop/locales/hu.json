@@ -2477,7 +2477,10 @@
     "Vertical": "Függőleges",
     "Horizontal": "Vízszintes",
     "I could not verify that YouTube opened. Check the page in the browser.": "Nem tudtam ellenőrizni, hogy megnyílt-e a YouTube. Ellenőrizd az oldalt a böngészőben.",
-    "No supported browser was found to open YouTube.": "Nem található támogatott böngésző a YouTube megnyitásához."
+    "No supported browser was found to open YouTube.": "Nem található támogatott böngésző a YouTube megnyitásához.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "A mikrofonhoz való hozzáférés megtagadva. Engedélyezze a Capri alkalmazást a Rendszerbeállítások → Adatvédelem és biztonság → Mikrofon részben.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "A hangtanításhoz NVIDIA GPU szükséges Windows rendszeren. macOS rendszeren nem érhető el.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "A telepítő automatikusan telepíti a beszélgetés nyelvének hangját. Macen a hang az Apple GPU-t (Metal) használja, szükség esetén pedig a CPU-ra vált."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

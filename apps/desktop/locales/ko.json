@@ -2477,7 +2477,10 @@
     "Vertical": "세로형",
     "Horizontal": "가로형",
     "I could not verify that YouTube opened. Check the page in the browser.": "YouTube가 열렸는지 확인하지 못했습니다. 브라우저에서 페이지를 확인하세요.",
-    "No supported browser was found to open YouTube.": "YouTube를 열 수 있는 지원 브라우저를 찾지 못했습니다."
+    "No supported browser was found to open YouTube.": "YouTube를 열 수 있는 지원 브라우저를 찾지 못했습니다.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "마이크 접근이 거부되었습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 Capri를 허용하세요.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "음성 훈련에는 Windows의 NVIDIA GPU가 필요합니다. macOS에서는 사용할 수 없습니다.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "설치 시 대화 언어에 맞는 음성이 자동으로 설치됩니다. Mac에서는 음성이 Apple GPU(Metal)를 사용하며, 필요하면 CPU로 전환됩니다."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",
