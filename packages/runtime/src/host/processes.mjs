@@ -126,6 +126,7 @@ export function launch(
     cleanEnv = false,
     cwd = root,
     probeStartedAt = processStartedAt,
+    stdio = 'ignore',
   } = {},
 ) {
   const existing = managedProcess(name);
@@ -189,7 +190,7 @@ export function launch(
     // The GUI must survive a short-lived launcher. Console services inherit
     // the windowless GUI instead of requesting a new console process group.
     detached: process.platform !== 'win32',
-    stdio: 'ignore',
+    stdio,
   });
   child.once('error', (error) => record('stderr', { event: 'spawn-failed', code: error.code }));
   child.once('exit', (code) =>

@@ -2,6 +2,7 @@ import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { root, paths } from './host/paths.mjs';
 import { initialize } from './context.mjs';
 import { launch, managedProcess } from './host/processes.mjs';
@@ -12,6 +13,7 @@ import { updateBlocksStartup } from './host/update-state.mjs';
 import { desktopPlatform, electronExecutable } from './host/platform.mjs';
 
 const run = promisify(execFile);
+const STARTUP_CHECK_MS = 3000;
 
 export async function superviseDesktopExit(start, reportCrash) {
   const { promise: exit, resolve: exited } = Promise.withResolvers();
@@ -67,9 +69,30 @@ export async function startDesktop({ wait = false } = {}) {
   const previous = process.env.ELECTRON_RUN_AS_NODE;
   delete process.env.ELECTRON_RUN_AS_NODE;
   try {
+    // Desktop output is private by default. CAPRI_DESKTOP_DEBUG=1 shows it in
+    // this terminal for diagnosing a startup failure from source.
+    const stdio = process.env.CAPRI_DESKTOP_DEBUG === '1' ? 'inherit' : 'ignore';
     const start = (onExit) =>
-      launch('desktop', executable, [path.join(root, 'apps/desktop/main.mjs')], rt, { onExit });
-    if (!wait) return await start();
+      launch('desktop', executable, [path.join(root, 'apps/desktop/main.mjs')], rt, {
+        onExit,
+        stdio,
+      });
+    if (!wait) {
+      const marker = await start();
+      if (process.platform === 'darwin') {
+        // Without a Capri.exe-style launcher, an Electron crash in its first
+        // seconds would otherwise be reported as a successful start.
+        await delay(STARTUP_CHECK_MS);
+        if (!managedProcess('desktop'))
+          throw Object.assign(
+            new Error(
+              'The Capri desktop closed during startup. Run CAPRI_DESKTOP_DEBUG=1 npm run desktop to see why.',
+            ),
+            { code: 'CAPRI_DESKTOP_STARTUP_EXITED' },
+          );
+      }
+      return marker;
+    }
     return await superviseDesktopExit(start, async (code) => {
       if (updateBlocksStartup(root)) return false;
       await run(

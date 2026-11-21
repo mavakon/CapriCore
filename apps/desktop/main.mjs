@@ -465,6 +465,8 @@ else {
     app.on('browser-window-created', (_event, window) => window.setIcon(applicationIcon));
 }
 async function initializeDesktop() {
+  // Running from source shows Electron's own Dock icon until Capri sets its own.
+  if (process.platform === 'darwin') app.dock?.setIcon(applicationIcon);
   let window;
   let reportDesktopCrash;
   let gpuProcessFailures = 0;
@@ -9777,7 +9779,12 @@ async function initializeDesktop() {
     activeMask = maskFor(avatar.currentId);
     pointer.start();
 
-    tray = new Tray(path.join(root, 'assets/default/app.ico'));
+    // macOS cannot decode .ico; the menu bar takes an 18 pt image.
+    tray = new Tray(
+      process.platform === 'darwin'
+        ? nativeImage.createFromPath(applicationIcon).resize({ height: 18 })
+        : path.join(root, 'assets/default/app.ico'),
+    );
     tray.setToolTip(uiText('Capri desktop companion', languages.value.interface));
     tray.on('click', () => restoreCompanion());
     tray.on('balloon-click', () => {
