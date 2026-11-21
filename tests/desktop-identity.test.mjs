@@ -32,6 +32,7 @@ test(
       'tools/setup/prepare-desktop-identity.ps1',
       'packages/runtime/src/host/desktop-identity.mjs',
       'packages/runtime/src/host/paths.mjs',
+      'packages/runtime/src/host/platform.mjs',
       'packages/runtime/src/atomic-json.mjs',
     ]) {
       const target = path.join(fixture, name);
