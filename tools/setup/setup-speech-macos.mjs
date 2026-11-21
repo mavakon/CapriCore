@@ -3,7 +3,7 @@
 /**
  * Installs Capri's speech components on macOS (Apple silicon) from a source
  * checkout: the private Python runtime, speech recognition and the voice for
- * one language. It runs the same component installer as Settings → Language,
+ * one language. It runs the same component installer as Settings → Languages,
  * so a checkout can be prepared and verified without opening the desktop.
  *
  *   npm run setup:macos-speech -- --speech en --recognition en

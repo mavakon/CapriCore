@@ -82,9 +82,12 @@ def verify_source():
         or "{}"
     )
     if not pinned_source(installed, upstream["source"]):
-        raise ValueError(
-            "Installed source is not pinned correctly; run setup-voice-training.cmd"
+        repair = (
+            "reinstall the voice in Settings > Languages"
+            if sys.platform == "darwin"
+            else "run setup-voice-training.cmd"
         )
+        raise ValueError(f"Installed source is not pinned correctly; {repair}")
     return upstream
 
 

@@ -64,7 +64,11 @@ export async function startCompanionVoice({ language = 'en', signal, modelId } =
   const deviceKey = voiceDevicePreference(readModelDevices(root).voice, selected.backend);
   const { python, env: runtimeEnv } = voiceRuntime(root, selected, deviceKey);
   if (!existsSync(python))
-    throw new Error('Install the voice environment with setup-voice-training.cmd.');
+    throw new Error(
+      process.platform === 'darwin'
+        ? 'Install the voice in Settings → Languages.'
+        : 'Install the voice environment with setup-voice-training.cmd.',
+    );
   const marker = managedProcess('companion-voice');
   if (marker && (marker.deviceKey ?? 'auto') !== deviceKey) await stopManaged('companion-voice');
   if (requiresPrivacyRestart(managedProcess('companion-voice')))

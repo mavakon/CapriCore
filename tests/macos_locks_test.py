@@ -102,5 +102,60 @@ class QwenLockTests(MacLockShape, unittest.TestCase):
                 self.assertEqual(public_version(self.mac[name_of(name)]['version']), version)
 
 
+def github_archive(git_url):
+    """git+https://github.com/o/r.git@commit -> https://github.com/o/r/archive/commit.tar.gz"""
+    match = re.fullmatch(r'git\+(https://github\.com/[\w.-]+/[\w.-]+?)(?:\.git)?@([0-9a-f]{40})', git_url)
+    if not match:
+        raise AssertionError(f'not a pinned GitHub commit: {git_url}')
+    return f'{match.group(1)}/archive/{match.group(2)}.tar.gz'
+
+
+class VoiceLockTests(MacLockShape, unittest.TestCase):
+    SOURCES = ('chatterbox-tts', 'resemble-perth')
+
+    def setUp(self):
+        self.windows = lock_entries('requirements-voice-training.lock')
+        self.mac = lock_entries('requirements-voice-macos.lock')
+
+    def test_macos_voice_lock_is_hash_locked_and_has_no_cuda_or_git(self):
+        self.assert_hash_locked(self.mac)
+        self.assert_no_cuda(self.mac)
+        for name, entry in self.mac.items():
+            with self.subTest(package=name):
+                self.assertFalse((entry['url'] or '').startswith('git+'), 'a Mac has no bundled Git')
+
+    def test_macos_voice_lock_keeps_every_windows_version_but_the_torch_build(self):
+        self.assertEqual(self.differing_versions(), {
+            'torch': ('2.6.0+cu124', '2.6.0'), 'torchaudio': ('2.6.0+cu124', '2.6.0'),
+        })
+        # colorama is a Windows-only dependency of click and tqdm.
+        self.assertEqual(set(self.windows) - set(self.mac), {'colorama'})
+        self.assertEqual(set(self.mac) - set(self.windows), set())
+
+    def test_chatterbox_and_perth_are_the_windows_commits_as_github_archives(self):
+        for name in self.SOURCES:
+            with self.subTest(package=name):
+                self.assertEqual(self.mac[name]['url'], github_archive(self.windows[name]['url']))
+                self.assertIsNone(self.mac[name]['version'])
+        source = json.loads((CONFIG / 'voice-upstream.json').read_text(encoding='utf-8'))['source']
+        self.assertEqual(self.mac['chatterbox-tts']['url'],
+                         f"{source['repository'].removesuffix('.git')}/archive/{source['revision']}.tar.gz")
+        self.assertEqual(self.mac['chatterbox-tts']['url'], runtime()['voice']['source']['archive'])
+
+    def test_lock_inputs_name_the_same_sources_and_torch(self):
+        inputs = lock_entries('requirements-voice-macos.in')
+        self.assertEqual(set(inputs), {*self.SOURCES, 'torch', 'torchaudio'})
+        for name, entry in inputs.items():
+            with self.subTest(package=name):
+                self.assertEqual((entry['url'], entry['version']), (self.mac[name]['url'], self.mac[name]['version']))
+        # Chatterbox itself asks for Perth's moving master branch; the override pins the same commit.
+        overrides = lock_entries('voice-macos-overrides.txt')
+        self.assertEqual(overrides, {'resemble-perth': inputs['resemble-perth']})
+        voice = runtime()['voice']
+        self.assertEqual(voice['requirements'], 'config/requirements-voice-macos.lock')
+        self.assertEqual(self.mac['torch']['version'], voice['torch'])
+        self.assertEqual(self.mac['torchaudio']['version'], voice['torchaudio'])
+
+
 if __name__ == '__main__':
     unittest.main()

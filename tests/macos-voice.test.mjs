@@ -936,7 +936,8 @@ test('Mac users get macOS settings guidance in their interface language', () => 
   assert.equal(macHost({ userAgentData: { platform: 'macOS' } }), true);
   assert.equal(macHost({ platform: 'MacIntel' }), true);
   assert.equal(macHost({ platform: 'Win32' }), false);
-  assert.equal(macHost(undefined), false);
+  assert.equal(macHost(null), false);
+  assert.equal(macHost({}), false);
   assert.equal(microphoneDeniedMessage({ platform: 'MacIntel' }), MAC_MICROPHONE_DENIED);
   assert.match(microphoneDeniedMessage({ platform: 'Win32' }), /Windows microphone access/);
   for (const key of [MAC_MICROPHONE_DENIED, MAC_TRAINING_UNAVAILABLE, MAC_VOICE_INSTALL_HELP]) {
