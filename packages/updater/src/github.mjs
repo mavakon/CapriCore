@@ -3,12 +3,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { EXPERIMENTAL_REPOSITORY, REPOSITORY } from './releases.mjs';
+import { EXPERIMENTAL_REPOSITORY, MACOS_REPOSITORY, REPOSITORY } from './releases.mjs';
 import { listGitLabReleases } from './gitlab.mjs';
 const execute = promisify(execFile);
 const cdns = new Set(['release-assets.githubusercontent.com', 'objects.githubusercontent.com']);
 function releasePath(repository) {
-  if (repository !== REPOSITORY && repository !== EXPERIMENTAL_REPOSITORY)
+  if (![REPOSITORY, EXPERIMENTAL_REPOSITORY, MACOS_REPOSITORY].includes(repository))
     throw new Error('Unapproved update repository');
   return `/repos/${repository}/releases`;
 }

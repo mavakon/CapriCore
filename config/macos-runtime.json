@@ -7,5 +7,21 @@
     "sha256": "ac453373fa09110df9edab032a00936dd834f85421c5333cb3a1ff9cbdc410ea",
     "bytes": 16896114,
     "archiveRoot": "llama-b12317"
+  },
+  "node": {
+    "version": "24.22.1",
+    "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz",
+    "sha256": "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7",
+    "archiveRoot": "node-v24.22.1-darwin-arm64"
+  },
+  "electron": {
+    "version": "45.3.1",
+    "url": "https://github.com/electron/electron/releases/download/v45.3.1/electron-v45.3.1-darwin-arm64.zip",
+    "sha256": "ed40f8473a3c62a7c0463bd42f6724ccb8d5919cfdc64e0d9f65f61bdb3fe4d2"
+  },
+  "app": {
+    "name": "Capri",
+    "bundleIdentifier": "com.capri-core.desktop",
+    "category": "public.app-category.productivity"
   }
 }

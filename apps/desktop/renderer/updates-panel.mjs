@@ -231,13 +231,13 @@ export class UpdatesPanel {
     this.get('install').hidden = !currentChannel || value.phase !== 'ready';
     this.get('install').disabled = busy;
     this.get('install').textContent = this.ui.text(
-      value.mode === 'managed' && !value.installerRequired
+      ['managed', 'macos'].includes(value.mode) && !value.installerRequired
         ? 'Restart and update'
         : 'Open installer',
     );
     this.get('source').hidden = value.mode !== 'installer';
     this.get('full').hidden = value.mode !== 'managed' || !value.installerRequired;
-    this.get('preserve').hidden = value.mode !== 'managed';
+    this.get('preserve').hidden = !['managed', 'macos'].includes(value.mode);
     const progress = this.get('progress');
     progress.hidden = !busy;
     if (value.progress?.total)

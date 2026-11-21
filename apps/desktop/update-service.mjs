@@ -25,6 +25,7 @@ import { listUpdateReleases, githubCredential } from '../../packages/updater/src
 import { gitlabReleaseUrl } from '../../packages/updater/src/gitlab.mjs';
 import {
   EXPERIMENTAL_REPOSITORY,
+  MACOS_REPOSITORY,
   REPOSITORY,
   compareVersions,
   selectRelease,
@@ -36,6 +37,11 @@ import { downloadUpdate } from '../../packages/updater/src/download.mjs';
 import { stageUpdate } from '../../packages/updater/src/stage.mjs';
 import { fileHash } from '../../packages/installer/src/download.mjs';
 import { prepareUpdateHost } from '../../packages/updater/src/launcher.mjs';
+import {
+  launchMacosSwap,
+  openDiskImage,
+  stageMacosUpdate,
+} from '../../packages/updater/src/macos.mjs';
 
 function isExperimentalRelease(release) {
   // A private preview can be marked Latest on GitHub only as a regular release.
@@ -74,6 +80,11 @@ export class UpdateService {
     launch = spawn,
     prepareHost = prepareUpdateHost,
     startupTimeoutMs = 15000,
+    platform = process.platform,
+    macApp = process.env.CAPRI_MACOS_APP,
+    stageMacApp = stageMacosUpdate,
+    swapMacApp = launchMacosSwap,
+    openImage = openDiskImage,
   }) {
     Object.assign(this, {
       root,
@@ -86,6 +97,10 @@ export class UpdateService {
       launch,
       prepareHost,
       startupTimeoutMs,
+      macApp,
+      stageMacApp,
+      swapMacApp,
+      openImage,
     });
     this.preferences = new Preferences(
       path.join(state, 'updates.json'),
@@ -95,13 +110,19 @@ export class UpdateService {
     const metadata = JSON.parse(readFileSync(path.join(root, 'config/release.json'), 'utf8'));
     parseVersion(metadata.tag);
     this.current = installedUpdateVersion(root, metadata.tag);
-    this.mode = 'installer';
-    try {
-      managedInstallation(root);
-      this.mode = 'managed';
-    } catch {
-      /* A source checkout is never overwritten by the updater. */
-    }
+    // macOS updates replace the whole Capri.app from a disk image published in
+    // the macOS port's releases. A macOS checkout only offers that image.
+    this.mac = platform === 'darwin';
+    this.mode = this.mac && macApp ? 'macos' : 'installer';
+    if (!this.mac)
+      try {
+        managedInstallation(root);
+        this.mode = 'managed';
+      } catch {
+        /* A source checkout is never overwritten by the updater. */
+      }
+    this.assetKind = this.mac ? 'macos' : this.mode === 'managed' ? 'source' : 'installer';
+    this.repository = this.mac ? MACOS_REPOSITORY : REPOSITORY;
     this.value = {
       phase: 'idle',
       current: this.current,
@@ -169,12 +190,23 @@ export class UpdateService {
     }
   }
   async findRelease(experimental, signal, { reportPrivateFailure = false } = {}) {
+    if (this.mac) {
+      // Public releases: no GitHub credential leaves Capri for them.
+      const items = await this.releases({ token: null, signal, repository: this.repository });
+      const release = selectRelease(items, {
+        current: this.current,
+        experimental,
+        kind: this.assetKind,
+        repository: this.repository,
+      });
+      return release && { ...release, repository: this.repository };
+    }
     const token = await this.optionalCredential();
     signal.throwIfAborted();
     const selection = {
       current: this.current,
       experimental,
-      kind: this.mode === 'managed' ? 'source' : 'installer',
+      kind: this.assetKind,
     };
     const publicReleases = this.releases({ token, signal, allowAnonymousFallback: true });
     const selectPublic = (items) => {
@@ -286,7 +318,7 @@ export class UpdateService {
     return {
       tag: selected.tag_name,
       experimental: isExperimentalRelease(selected),
-      bytes: releaseAsset(selected, this.mode === 'managed' ? 'source' : 'installer').bytes,
+      bytes: releaseAsset(selected, this.assetKind).bytes,
       ...(selected.repository === EXPERIMENTAL_REPOSITORY
         ? { repository: EXPERIMENTAL_REPOSITORY }
         : {}),
@@ -294,9 +326,11 @@ export class UpdateService {
   }
   async history(experimental = false) {
     if (typeof experimental !== 'boolean') throw new Error('Invalid update channel.');
-    const token = await this.optionalCredential();
+    const token = this.mac ? null : await this.optionalCredential();
     const signal = AbortSignal.timeout(20000);
-    const publicRequest = this.releases({ token, signal, allowAnonymousFallback: true });
+    const publicRequest = this.mac
+      ? this.releases({ token: null, signal, repository: this.repository })
+      : this.releases({ token, signal, allowAnonymousFallback: true });
     const previewRequest =
       experimental && token
         ? this.releases({ token, signal, repository: EXPERIMENTAL_REPOSITORY })
@@ -320,7 +354,7 @@ export class UpdateService {
               notes: typeof release.body === 'string' ? release.body.slice(0, 12000) : '',
               update:
                 compareVersions(releaseVersion(release, repository), this.current) > 0 &&
-                Boolean(releaseAsset(release, this.mode === 'managed' ? 'source' : 'installer')),
+                Boolean(releaseAsset(release, this.assetKind)),
             },
           });
         } catch {
@@ -328,7 +362,7 @@ export class UpdateService {
         }
       }
     };
-    add(publicResult.value, REPOSITORY);
+    add(publicResult.value, this.repository);
     if (previewResult.status === 'fulfilled' && previewResult.value)
       add(previewResult.value, EXPERIMENTAL_REPOSITORY);
     this.historyEntries = entries;
@@ -463,10 +497,12 @@ export class UpdateService {
       installerReason: null,
       notification: null,
     });
-    const asset = releaseAsset(this.selected, this.mode === 'managed' ? 'source' : 'installer');
+    const asset = releaseAsset(this.selected, this.assetKind);
     try {
       const token =
-        this.selected.downloadSource === 'gitlab' ? null : await this.optionalCredential();
+        this.mac || this.selected.downloadSource === 'gitlab'
+          ? null
+          : await this.optionalCredential();
       this.controller.signal.throwIfAborted();
       const downloadOptions = {
         token,
@@ -480,7 +516,13 @@ export class UpdateService {
       let archive = await this.download(asset, folder, downloadOptions);
       this.controller.signal.throwIfAborted();
       this.publish({ phase: 'verifying' });
-      if (this.mode === 'managed') {
+      if (this.mac) {
+        // Finder and hdiutil recognise a disk image by its extension.
+        const image = path.join(path.dirname(archive), asset.sha256 + '.dmg');
+        noLinks(image);
+        copyFileSync(archive, image);
+        this.prepared = { image, asset, archive, tag: this.selected.tag_name };
+      } else if (this.mode === 'managed') {
         let source, installerReason;
         try {
           source = await this.stage({
@@ -561,6 +603,7 @@ export class UpdateService {
     const prepared = this.prepared;
     if ((await fileHash(prepared.archive)) !== prepared.asset.sha256)
       throw new Error('Update checksum verification failed. Download it again.');
+    if (prepared.image) return this.installMacUpdate(prepared, shutdown);
     if (prepared.executable) {
       if ((await fileHash(prepared.executable)) !== prepared.asset.sha256)
         throw new Error('Installer checksum verification failed.');
@@ -669,6 +712,34 @@ export class UpdateService {
       this.publish({ phase: 'ready', error: error.message });
       throw error;
     }
+  }
+  async installMacUpdate(prepared, shutdown) {
+    if ((await fileHash(prepared.image)) !== prepared.asset.sha256)
+      throw new Error('Update checksum verification failed. Download it again.');
+    if (this.mode !== 'macos') {
+      // A checkout keeps running; the disk image installs a separate Capri.app.
+      await this.openImage(prepared.image);
+      return true;
+    }
+    let staged;
+    try {
+      staged = await this.stageMacApp({
+        image: prepared.image,
+        appPath: this.macApp,
+        tag: prepared.tag,
+      });
+    } catch (error) {
+      if (error.code !== 'CAPRI_APP_FOLDER_READ_ONLY') throw error;
+      // Without write access to the app's folder, Finder replaces it instead.
+      await this.openImage(prepared.image);
+      await shutdown();
+      this.handoff = true;
+      return true;
+    }
+    await shutdown();
+    this.swapMacApp({ pid: process.pid, appPath: this.macApp, ...staged });
+    this.handoff = true;
+    return true;
   }
   close() {
     this.closed = true;
