@@ -339,7 +339,7 @@ import {
 import { DIMMING_DEFAULTS, validateDimming } from './renderer/dimming-settings.mjs';
 import { RequestRouter } from './request-router.mjs';
 import { randomUUID } from 'node:crypto';
-import { freemem } from 'node:os';
+import { availableMemoryBytes } from '../../packages/runtime/src/hardware/available-memory.mjs';
 import { Preferences } from './preferences.mjs';
 import { INFERENCE_STARTUP_DEFAULTS, inferenceStartupSettings } from './inference-startup.mjs';
 import { VOICE_EFFECT_DEFAULTS, validateVoiceEffects } from './renderer/voice-effects-settings.mjs';
@@ -1257,7 +1257,7 @@ async function initializeDesktop() {
       ? { config: { schemaVersion: 1, enabled: false, timeoutMs: 150 } }
       : {}),
   });
-  const responseTiming = responsiveness({ ...settings, availableRamBytes: freemem() });
+  const responseTiming = responsiveness({ ...settings, availableRamBytes: availableMemoryBytes() });
   const emulatedX64 = windowsX64Emulation();
   const internetSearch = new WebSearch();
   const coding = new CodingService({

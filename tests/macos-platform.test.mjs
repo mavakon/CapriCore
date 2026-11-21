@@ -100,3 +100,45 @@ test('unified memory profiles follow installed RAM, not double-counted VRAM', ()
   assert.equal(recommendProfile(mac(36)).profile.id, 'quality');
   assert.match(recommendProfile(mac(16)).reasons.join(' '), /Metal/);
 });
+
+test('macOS process start times become digits-only marker identities', async () => {
+  const { parseDarwinStartTime } = await import('../packages/runtime/src/host/processes.mjs');
+  const value = parseDarwinStartTime('Sat Nov 21 23:27:59 2026\n');
+  assert.equal(value, String(Date.UTC(2026, 10, 21, 23, 27, 59) / 1000));
+  // readMarker only admits digit identities; a raw ps date would be rejected.
+  assert.match(value, /^\d+$/);
+  assert.equal(
+    parseDarwinStartTime('Sun Nov  1 03:07:09 2026'),
+    String(Date.UTC(2026, 10, 1, 3, 7, 9) / 1000),
+  );
+  assert.equal(parseDarwinStartTime(''), null);
+  assert.equal(parseDarwinStartTime('not a date'), null);
+});
+
+test('macOS available memory counts reclaimable inactive pages', async () => {
+  const { parseVmStat, availableMemoryBytes } = await import(
+    '../packages/runtime/src/hardware/available-memory.mjs'
+  );
+  const sample = [
+    'Mach Virtual Memory Statistics: (page size of 16384 bytes)',
+    'Pages free:                               10000.',
+    'Pages active:                            500000.',
+    'Pages inactive:                          300000.',
+    'Pages speculative:                         2000.',
+    'Pages purgeable:                          50000.',
+  ].join('\n');
+  assert.equal(parseVmStat(sample), (10000 + 300000 + 2000) * 16384);
+  assert.equal(parseVmStat('garbage'), null);
+  assert.equal(
+    availableMemoryBytes({ platform: 'darwin', run: () => sample }),
+    parseVmStat(sample),
+  );
+  assert.ok(
+    availableMemoryBytes({
+      platform: 'darwin',
+      run: () => {
+        throw new Error('x');
+      },
+    }) > 0,
+  );
+});

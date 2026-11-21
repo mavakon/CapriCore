@@ -1,4 +1,5 @@
-import { availableParallelism, totalmem, freemem, cpus, platform, arch, release } from 'node:os';
+import { availableParallelism, totalmem, cpus, platform, arch, release } from 'node:os';
+import { availableMemoryBytes } from './available-memory.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -216,7 +217,7 @@ export async function probeHardware({
     cpu: cpus()[0]?.model ?? 'Unknown',
     cpuThreads: availableParallelism(),
     ramBytes: totalmem(),
-    availableRamBytes: freemem(),
+    availableRamBytes: availableMemoryBytes({ platform: hostPlatform }),
     gpus: [],
     warnings: [],
   };

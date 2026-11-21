@@ -142,8 +142,21 @@ export async function setupMacos() {
   } catch (error) {
     throw new Error(`llama-server could not start: ${error.stderr || error.message}`);
   }
-  if (!electronBundleReady(path.join(root, 'node_modules/electron')))
+  const electron = path.join(root, 'node_modules/electron');
+  if (!existsSync(path.join(electron, 'install.js')))
     log('Electron is missing. Run npm ci in this folder before npm run desktop.');
+  else if (!electronBundleReady(electron)) {
+    // Electron 45 fetches its app bundle lazily instead of in postinstall.
+    // Keep the download cache inside the installation, not ~/Library/Caches.
+    log('downloading Electron for macOS.');
+    execFileSync(process.execPath, [path.join(electron, 'install.js')], {
+      cwd: root,
+      stdio: 'inherit',
+      env: { ...process.env, electron_config_cache: path.join(cache, 'electron-cache') },
+    });
+    if (!electronBundleReady(electron)) throw new Error('The Electron download is incomplete.');
+    log('Electron is ready.');
+  } else log('Electron is ready.');
   if (!existsSync(path.join(root, 'config/core.local.json')))
     log('next: npm run setup, then npm run models:pull, then npm run desktop.');
   else log('next: npm run models:pull (if not done), then npm run desktop.');
