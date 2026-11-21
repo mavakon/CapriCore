@@ -324,12 +324,16 @@ async function main() {
   symlinkSync('/Applications', path.join(staging, 'Applications'));
   const image = path.join(out, releaseAssetName(release.tag, 'macos'));
   rmSync(image, { force: true });
+  // hdiutil's own size estimate can fall short for tens of thousands of files.
+  const kilobytes = Number(output('/usr/bin/du', ['-sk', staging]).split(/\s+/)[0]);
   run('/usr/bin/hdiutil', [
     'create',
     '-volname',
     runtimes.app.name,
     '-srcfolder',
     staging,
+    '-size',
+    `${Math.ceil((kilobytes * 1.25) / 1024) + 200}m`,
     '-fs',
     'HFS+',
     '-format',
