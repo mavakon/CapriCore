@@ -16,6 +16,7 @@ from integrations.model_download import _regular_path
 from .inference import check_cancelled, SpeechGenerationLimit
 from .qwen_provision import ROOT, RUSSIAN_QWEN_ID, verified_qwen
 from .compatibility import qwen_compute
+from .accelerator import is_mps
 
 LANGUAGES = {'en': 'English', 'zh': 'Chinese', 'ja': 'Japanese', 'ko': 'Korean',
              'de': 'German', 'fr': 'French', 'ru': 'Russian', 'pt': 'Portuguese',
@@ -74,8 +75,10 @@ class QwenVoice:
                                        config.get('qwenGpuAutomatic', False),
                                        minimum_gib=6 if self.russian else 3)
         accelerated = compute != 'cpu'
+        # The Apple GPU keeps the CPU's FP32 weights; BF16 is the CUDA/ROCm path.
+        half = accelerated and not is_mps(compute)
         self.engine = Qwen3TTSModel.from_pretrained(str(folder), device_map=compute,
-            dtype=torch.bfloat16 if accelerated else torch.float32,
+            dtype=torch.bfloat16 if half else torch.float32,
             attn_implementation='sdpa', local_files_only=True,
             trust_remote_code=False)
         self.engine.model.requires_grad_(False).eval()
@@ -93,7 +96,7 @@ class QwenVoice:
         self.recent_speech = None
         self.decoder_device = compute
         self.decoder_reason = reason
-        self.precision = 'bfloat16-talker/float32-decoder' if accelerated else 'float32'
+        self.precision = 'bfloat16-talker/float32-decoder' if half else 'float32'
         self.started, self.frames = 0, 0
         self.decode_started, self.decode_seconds = 0, 0
         # Every autoregressive talker step checks cancellation and both a time

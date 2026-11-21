@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import sys
 from urllib.error import HTTPError
 
 from .dataset import ROOT, digest, write_json
@@ -80,11 +81,27 @@ def verify_source():
         importlib.metadata.distribution("chatterbox-tts").read_text("direct_url.json")
         or "{}"
     )
-    if installed.get("vcs_info", {}).get("commit_id") != upstream["source"]["revision"]:
+    if not pinned_source(installed, upstream["source"]):
         raise ValueError(
             "Installed source is not pinned correctly; run setup-voice-training.cmd"
         )
     return upstream
+
+
+def pinned_source(installed, source, platform=None):
+    """The pinned Git commit, or on macOS the same commit's hash-locked GitHub archive."""
+    revision = source["revision"]
+    if installed.get("vcs_info", {}).get("commit_id") == revision:
+        return True
+    if (platform or sys.platform) != "darwin":
+        return False
+    repository = source["repository"].removesuffix(".git")
+    archive = installed.get("archive_info")
+    return (
+        installed.get("url") == f"{repository}/archive/{revision}.tar.gz"
+        and isinstance(archive, dict)
+        and bool(archive.get("hash") or archive.get("hashes"))
+    )
 
 
 def verify_model_metadata(config):

@@ -25,3 +25,11 @@ export function voiceRuntimeEnvironment(root, inherited = process.env) {
     return {};
   }
 }
+
+/**
+ * Variables every voice Python process needs on this platform. On macOS, PyTorch
+ * runs the few operators Metal lacks on the CPU instead of failing the phrase.
+ */
+export function voicePlatformEnvironment(platform = process.platform) {
+  return platform === 'darwin' ? { PYTORCH_ENABLE_MPS_FALLBACK: '1' } : {};
+}

@@ -41,6 +41,12 @@ def doctor(config, *, inference_only=False, runtime_only=False):
     report['cuda'] = report['cudaCompute']['available']
     if report["cudaCompute"].get("device"):
         report["gpu"] = report["cudaCompute"]["device"]
+    if sys.platform == 'darwin':
+        # Apple silicon speaks through Metal (MPS) when it works, else on the CPU.
+        from integrations.voice_runtime.accelerator import mps_preflight
+        report['mpsCompute'] = mps_preflight(torch)
+        if report['mpsCompute'].get('device'):
+            report['gpu'] = report['mpsCompute']['device']
     if not runtime_only and report["cudaCompute"]["kernelReady"]:
         try:
             free, total = torch.cuda.mem_get_info()

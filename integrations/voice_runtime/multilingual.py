@@ -20,6 +20,7 @@ from .text import validate_speech_language
 from .catalog import selected_voice
 from .qwen_provision import RUSSIAN_QWEN_ID
 from .reference_memory import prepare_reference
+from .accelerator import empty_cache, out_of_memory, synchronize
 
 
 def offline_converter(folder):
@@ -80,7 +81,7 @@ class MultilingualVoice(DecoderMemoryBudget):
         self.engine.s3gen.flow.decoder.estimator.register_forward_pre_hook(lambda *_: check_cancelled(self.cancelled))
         self._native_inference = self.engine.t3.inference
         self.engine.t3.inference = self.bounded_tokens
-        torch.cuda.empty_cache()
+        empty_cache(torch)
         self.choose_decoder()
 
     def bounded_tokens(self, **kwargs):
@@ -89,8 +90,7 @@ class MultilingualVoice(DecoderMemoryBudget):
         kwargs['max_new_tokens'] = limit
         started = time.perf_counter()
         tokens = self._native_inference(**kwargs)
-        if self.engine.device != 'cpu':
-            torch.cuda.synchronize()
+        synchronize(torch, self.engine.device)
         self.token_ms = (time.perf_counter() - started) * 1000
         if tokens.shape[-1] >= limit:
             raise SpeechGenerationLimit()
@@ -126,8 +126,8 @@ class MultilingualVoice(DecoderMemoryBudget):
             torch.manual_seed(self.config['seed'])
             try:
                 audio = self.render(text, language)
-            except torch.cuda.OutOfMemoryError:
-                if self.decoder_device == 'cpu':
+            except Exception as error:
+                if self.decoder_device == 'cpu' or not out_of_memory(torch, error):
                     raise
                 self.decoder_oom()
                 check_cancelled(cancelled)
@@ -173,7 +173,7 @@ class VoicePool:
             self.voice = None
             self.kind = None
             gc.collect()
-            torch.cuda.empty_cache()
+            empty_cache(torch)
             self.voice = (CapriVoice(self.config) if kind == 'turbo' else
                           QwenVoice(self.config, model_id=selected.get('id')) if qwen else MultilingualVoice(self.config, component))
             self.kind = kind
