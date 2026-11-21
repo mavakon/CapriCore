@@ -1,0 +1,4 @@
+{
+  "description": "Unit tests known to fail on a platform, with the reason. tools/checks/test-known-failures.mjs fails CI on any failure not listed here and reports listed tests that pass. Keys are process.platform values.",
+  "darwin": []
+}

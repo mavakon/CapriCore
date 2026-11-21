@@ -30,7 +30,8 @@ for (const [batch, concurrency] of batches) {
   if (!batch.length) continue;
   const result = spawnSync(
     nodePath,
-    ['--test', '--test-concurrency=' + concurrency, ...batch, ...process.argv.slice(2)],
+    // Options must precede the files: node ignores test-runner flags after them.
+    ['--test', '--test-concurrency=' + concurrency, ...process.argv.slice(2), ...batch],
     { cwd: root, env, stdio: 'inherit', windowsHide: true },
   );
   if (result.error) throw result.error;

@@ -1,0 +1,80 @@
+name: macOS checks
+on:
+  pull_request:
+  push:
+    branches: [main, mac-port]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    # Apple silicon (arm64) runner. Standard runners are free for public repositories.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - name: Runner
+        run: |
+          sw_vers
+          uname -m
+          sysctl -n machdep.cpu.brand_string hw.memsize hw.ncpu
+          node --version
+      - run: npm ci
+      - name: Source checks (syntax, JSON, Python syntax, module boundaries)
+        run: npm run check -- --require-python
+      - name: Formatting
+        if: ${{ !cancelled() }}
+        run: npm run format:check
+      - name: Unit tests (Windows-only failures are listed in tools/checks/known-failures.json)
+        if: ${{ !cancelled() }}
+        run: node tools/checks/test-known-failures.mjs
+      - name: Source release check
+        if: ${{ !cancelled() }}
+        run: npm run release:check
+      - name: Set up the macOS runtime (pinned llama.cpp Metal build and Electron)
+        if: ${{ !cancelled() }}
+        run: npm run setup:macos
+      - name: macOS smoke check (doctor, bundled llama.cpp, tiny model chat)
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-macos-smoke.mjs
+      - name: Survey desktop verifications on macOS
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          status=0
+          for script in \
+            verify-desktop.mjs \
+            verify-settings-first-open.mjs \
+            verify-settings-lifecycle.mjs \
+            verify-companion-settings.mjs \
+            verify-button-feedback.mjs \
+            verify-text-selection.mjs \
+            verify-languages.mjs \
+            verify-window-dimming.mjs \
+            verify-app-catalog-settings.mjs \
+            verify-spotify-settings.mjs \
+            verify-inference-api.mjs \
+            verify-maintenance-offline.mjs \
+            verify-update-handoff.mjs \
+            verify-computer-control.mjs; do
+            echo "::group::$script"
+            start=$(date +%s)
+            if perl -e 'alarm shift; exec @ARGV' 300 node tools/verify/$script > "/tmp/$script.log" 2>&1; then result=PASS; else result=FAIL; status=1; fi
+            tail -40 "/tmp/$script.log"
+            echo "::endgroup::"
+            echo "SURVEY $result $script $(( $(date +%s) - start ))s" | tee -a /tmp/survey.txt
+          done
+          cat /tmp/survey.txt
+          exit $status
