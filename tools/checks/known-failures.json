@@ -29,7 +29,7 @@
     {
       "file": "tests/coding-mode.test.mjs",
       "test": "monitor reports saved paths, skips ignores and stops on revoking the project",
-      "reason": "Coding mode is not ported to macOS. FSEvents also reports the .gitignore written just before watching starts."
+      "reason": "Coding mode is not ported to macOS. This test is timing-dependent there: FSEvents sometimes reports the .gitignore written just before watching starts."
     },
     {
       "file": "tests/computer-agent-replanning.test.mjs",

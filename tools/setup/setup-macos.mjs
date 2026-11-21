@@ -125,9 +125,12 @@ export async function setupMacos() {
     log(`installed llama.cpp ${spec.version} (Metal) in ${path.relative(root, final)}.`);
   }
   try {
+    // The first launch of a freshly downloaded binary waits for macOS to scan
+    // it and its libraries and for Metal to initialize; 15 s was not enough on
+    // a cold GitHub runner.
     const devices = execFileSync(executable, ['--list-devices'], {
       encoding: 'utf8',
-      timeout: 15000,
+      timeout: 90000,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const metal = devices
@@ -140,6 +143,8 @@ export async function setupMacos() {
         : 'no Metal device reported; text runs on the CPU.',
     );
   } catch (error) {
+    if (error.code === 'ETIMEDOUT')
+      throw new Error('llama-server did not list its devices within 90 s.');
     throw new Error(`llama-server could not start: ${error.stderr || error.message}`);
   }
   const electron = path.join(root, 'node_modules/electron');
