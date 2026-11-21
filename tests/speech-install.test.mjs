@@ -104,6 +104,7 @@ function publicVoiceRepair({ credential = async () => null, releases, signal } =
     node: process.execPath,
     free: () => 20 * 2 ** 30,
     ownerStamp: () => '1',
+    platform: 'win32',
     voiceReady: () => ready,
     hardware: async () => ({ gpus: [{ vendor: 'NVIDIA' }] }),
     credential,
@@ -299,6 +300,7 @@ test('recognition-only installation downloads the necessary recognizer without v
           node: process.execPath,
           free: () => 4 * 2 ** 30,
           ownerStamp: () => '1',
+          platform: 'win32',
           hardware: () => {
             throw new Error('GPU probe must not run');
           },
@@ -385,6 +387,7 @@ test('non-English installation prepares the voice environment and the selected m
       free: () => 14 * 2 ** 30,
       voiceReady: () => ready,
       ownerStamp: () => '1',
+      platform: 'win32',
       hardware: async () => ({ gpus: [{ vendor: 'NVIDIA' }] }),
       download: async () => 'verified-fixture.zip',
       releases: () => {

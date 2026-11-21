@@ -12,9 +12,18 @@ export function voiceRocmSupported(hardware) {
   );
 }
 
+/**
+ * Apple silicon runs Chatterbox through PyTorch MPS on its GPU and falls back to
+ * the CPU when Metal is unavailable, so every Apple silicon Mac can speak.
+ */
+export function voiceAppleSupported(hardware) {
+  return hardware.platform === 'darwin' && hardware.arch === 'arm64';
+}
+
 export function voiceGpuSupported(hardware) {
   return Boolean(
-    hardware.gpus?.some((gpu) => /nvidia/i.test(gpu.vendor ?? gpu.name ?? '')) ||
+    voiceAppleSupported(hardware) ||
+      hardware.gpus?.some((gpu) => /nvidia/i.test(gpu.vendor ?? gpu.name ?? '')) ||
       voiceRocmSupported(hardware),
   );
 }

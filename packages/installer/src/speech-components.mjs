@@ -19,6 +19,9 @@ import { listReleases, githubCredential } from '../../updater/src/github.mjs';
 import { downloadUpdate } from '../../updater/src/download.mjs';
 import { compareVersions } from '../../updater/src/releases.mjs';
 import { processStartedAt } from '../../runtime/src/host/processes.mjs';
+import { ensureMacUv } from './macos-python.mjs';
+import { macSpeechOptions, runMacSpeechComponent } from './macos-speech.mjs';
+import { extractZip } from './zip-archive.mjs';
 
 export const SPEECH_GPU_UNSUPPORTED =
   'Voice needs NVIDIA CUDA or a supported AMD ROCm GPU on Windows 11 (experimental). This PC can still use text replies and microphone recognition. Integrated graphics and Intel voice acceleration are not supported.';
@@ -88,6 +91,8 @@ export async function installSpeechComponents(
     voiceReady = speechModelsInstalled,
     recognitionReady = recognitionModelsInstalled,
     ownerStamp = () => processStartedAt(process.pid),
+    platform = process.platform,
+    macComponent = runMacSpeechComponent,
   } = {},
 ) {
   selection = speechComponentSelection(selection);
@@ -114,7 +119,9 @@ export async function installSpeechComponents(
         throw Object.assign(new Error(SPEECH_GPU_UNSUPPORTED), {
           code: 'CAPRI_VOICE_GPU_UNSUPPORTED',
         });
-      rocmVoice = !detected.gpus?.some((gpu) => /nvidia/i.test(gpu.vendor ?? gpu.name ?? ''));
+      rocmVoice =
+        platform === 'win32' &&
+        !detected.gpus?.some((gpu) => /nvidia/i.test(gpu.vendor ?? gpu.name ?? ''));
     }
     const { requiredBytes } = estimateSpeechStorage(
       {
@@ -149,8 +156,10 @@ export async function installSpeechComponents(
       delete env[name];
     noLinks(env.TEMP);
     mkdirSync(env.TEMP, { recursive: true });
-    const stamp = ownerStamp();
-    if (!/^[0-9]+$/.test(stamp ?? ''))
+    const mac = platform === 'darwin';
+    // The owner stamp binds the Windows PowerShell child to this process (owned-speech.ps1).
+    const stamp = mac ? null : ownerStamp();
+    if (!mac && !/^[0-9]+$/.test(stamp ?? ''))
       throw new Error('The speech installer owner could not be verified. Restart Capri and retry.');
     const scripts = {
       'packages/installer/windows/archive.ps1': 'archive',
@@ -161,31 +170,40 @@ export async function installSpeechComponents(
       'tools/setup/setup-fast-multilingual-asr.ps1': 'recognition-fast-multi',
     };
     const ps = (name, args = []) =>
-      execute(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          path.join(root, 'tools/setup/owned-speech.ps1'),
-          '-Component',
-          scripts[name],
-          '-OwnerPid',
-          String(process.pid),
-          '-OwnerStamp',
-          stamp,
-          '-ArgumentsBase64',
-          Buffer.from(JSON.stringify(args), 'utf8').toString('base64'),
-        ],
-        {
-          cwd: root,
-          env,
-          signal,
-          output: (message) => report({ message }),
-        },
-      );
+      mac
+        ? macComponent(scripts[name], macSpeechOptions(scripts[name], args), {
+            root,
+            signal,
+            execute,
+            download,
+            baseEnv: env,
+            output: (message) => report({ message }),
+          })
+        : execute(
+            'powershell.exe',
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              path.join(root, 'tools/setup/owned-speech.ps1'),
+              '-Component',
+              scripts[name],
+              '-OwnerPid',
+              String(process.pid),
+              '-OwnerStamp',
+              stamp,
+              '-ArgumentsBase64',
+              Buffer.from(JSON.stringify(args), 'utf8').toString('base64'),
+            ],
+            {
+              cwd: root,
+              env,
+              signal,
+              output: (message) => report({ message }),
+            },
+          );
     const step = async (name, task) => {
       signal?.throwIfAborted();
       stage = name;
@@ -230,7 +248,9 @@ export async function installSpeechComponents(
         executableSha256: await fileHash(executable, signal),
       });
     };
-    await step('python', () => runtime('uv', '.runtime/uv/uv.exe'));
+    await step('python', () =>
+      mac ? ensureMacUv({ root, signal, download, execute }) : runtime('uv', '.runtime/uv/uv.exe'),
+    );
     if (needAsr)
       await step('recognition', () =>
         ps(
@@ -292,20 +312,23 @@ export async function installSpeechComponents(
           noLinks(parent);
           mkdirSync(parent, { recursive: true });
           folder = mkdtempSync(path.join(parent, 'pack-'));
-          await ps('packages/installer/windows/archive.ps1', [
-            '-Archive',
-            archive,
-            '-Destination',
-            folder,
-            '-MaximumBytes',
-            String(256 * 1024 ** 2),
-          ]);
+          if (mac) extractZip(archive, folder, { maximumBytes: 256 * 1024 ** 2 });
+          else
+            await ps('packages/installer/windows/archive.ps1', [
+              '-Archive',
+              archive,
+              '-Destination',
+              folder,
+              '-MaximumBytes',
+              String(256 * 1024 ** 2),
+            ]);
         }
         settings.profileDir = importVoicePack(folder, root, expected);
         writeJsonAtomic(path.join(root, 'config/companion-voice.json'), settings);
       });
       await step('voice-runtime', async () => {
-        await runtime('git', '.runtime/git/cmd/git.exe');
+        // macOS installs the pinned Chatterbox source archive; no Git is needed.
+        if (!mac) await runtime('git', '.runtime/git/cmd/git.exe');
         await ps(
           'tools/setup/setup-voice-training.ps1',
           selection.speech === 'en' ? [] : ['-DependenciesOnly'],
