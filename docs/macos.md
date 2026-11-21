@@ -20,7 +20,7 @@ screen and computer control, are separate follow-up work (see
    models: about 4.5 GB for the 4B model on a 24 GB Mac, of which 1.2 GB is the
    memory model every setup needs. Capri then restarts and opens.
 
-Requirements: macOS 12 or later on Apple silicon, and free disk space for the
+Requirements: macOS 13 (Ventura) or later on Apple silicon, and free disk space for the
 models (setup shows the amount).
 
 ### Where Capri keeps things
