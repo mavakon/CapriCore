@@ -9,6 +9,7 @@ import {
   readdirSync,
 } from 'node:fs';
 import { noLinks } from '../huggingface/artifacts.mjs';
+import { isMac } from './platform.mjs';
 
 export const LLAMA_VULKAN_FILES = Object.freeze([
   'llama-server.exe',
@@ -23,8 +24,31 @@ export const LLAMA_VULKAN_FILES = Object.freeze([
   'libomp.dll',
 ]);
 
-export function llamaBundleReady(executable) {
-  return LLAMA_VULKAN_FILES.every((name) => {
+/**
+ * The macOS arm64 release links its libraries through @rpath (the executable
+ * folder), so Metal and Accelerate support ship as ordinary dylibs. The archive
+ * stores the versioned names behind symbolic links; setup materializes each
+ * install name as a regular file because Capri refuses linked runtime files.
+ */
+export const LLAMA_MACOS_FILES = Object.freeze([
+  'llama-server',
+  'libllama-server-impl.dylib',
+  'libllama-common.0.dylib',
+  'libllama.0.dylib',
+  'libmtmd.0.dylib',
+  'libggml.0.dylib',
+  'libggml-base.0.dylib',
+  'libggml-cpu.0.dylib',
+  'libggml-blas.0.dylib',
+  'libggml-metal.0.dylib',
+  'libggml-rpc.0.dylib',
+]);
+
+export const llamaBundleFiles = (platform = process.platform) =>
+  isMac(platform) ? LLAMA_MACOS_FILES : LLAMA_VULKAN_FILES;
+
+export function llamaBundleReady(executable, platform = process.platform) {
+  return llamaBundleFiles(platform).every((name) => {
     try {
       const info = lstatSync(noLinks(path.join(path.dirname(executable), name)));
       return info.isFile() && info.size > 0;

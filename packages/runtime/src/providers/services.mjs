@@ -4,6 +4,7 @@ import path from 'node:path';
 import { root, requireExecutable } from '../host/paths.mjs';
 import { nodePath, llamaPath, openclawPath } from '../host/executables.mjs';
 import { llamaBundleReady } from '../host/llama-bundle.mjs';
+import { bundledLlamaServer } from '../host/platform.mjs';
 import { settings } from '../config/settings.mjs';
 import { runtime, initialize, headers } from '../context.mjs';
 import { launch, managedProcess, stopProcess, requiresPrivacyRestart } from '../host/processes.mjs';
@@ -33,12 +34,7 @@ async function startLocalLlama(
   { signal, voiceExpected = false, voiceReady = false } = {},
 ) {
   signal?.throwIfAborted();
-  const bundled = path.join(
-    root,
-    '.runtime',
-    `llama-${settings.llamaVersion}-vulkan`,
-    'llama-server.exe',
-  );
+  const bundled = bundledLlamaServer(path.join(root, '.runtime'), settings.llamaVersion);
   if (!llamaPath || (llamaPath === bundled && !llamaBundleReady(bundled)))
     throw Object.assign(
       new Error('The llama.cpp runtime is missing or incomplete. Run Capri Setup to repair it.'),

@@ -82,6 +82,7 @@
     "verify:dimming": "node tools/verify/verify-window-dimming.mjs",
     "doctor": "node packages/runtime/bin/capri.mjs doctor",
     "setup": "node packages/runtime/bin/capri.mjs setup",
+    "setup:macos": "node tools/setup/setup-macos.mjs",
     "models:pull": "node packages/runtime/bin/capri.mjs models",
     "check": "node tools/checks/source.mjs",
     "dev:graphify": "node tools/dev/graphify.mjs",

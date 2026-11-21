@@ -45,6 +45,17 @@ export function processStartedAt(pid) {
         ],
         { windowsHide: true, encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] },
       ).trim();
+    if (process.platform === 'darwin') {
+      // macOS has no /proc. The launch time from ps identifies the process
+      // together with its PID; the C locale keeps the text stable.
+      const started = execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 10000,
+        env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+      return started || null;
+    }
     const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
     return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
   } catch {

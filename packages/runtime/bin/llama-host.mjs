@@ -30,6 +30,9 @@ for (const key of [
   'TMP',
   'USERPROFILE',
   'LOCALAPPDATA',
+  // macOS: Metal caches compiled shaders under the user's temporary folder.
+  'HOME',
+  'TMPDIR',
 ])
   if (process.env[key]) env[key] = process.env[key];
 const canIsolate = process.platform === 'win32' && llamaBundleReady(executable);
