@@ -256,8 +256,11 @@ import {
   shell,
   safeStorage,
   Notification,
+  systemPreferences,
 } from 'electron';
+import { execFile } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -380,6 +383,12 @@ import { avatarTapsSleeping, isSleepCommand, SleepService } from './sleep-servic
 import { ScreenshotFiles } from './screenshot-files.mjs';
 import { ScreenClipFrames } from './screen-clip-frames.mjs';
 import { ScreenFrameWorker } from './screen-frame-worker.mjs';
+import { installScreenPoints } from './main/screen-points.mjs';
+import { MacosComputerPermissions } from './main/macos-permissions.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 import { ControlOverlay } from './main/control-overlay.mjs';
 import { ControlWindowLayer } from './main/control-window-layer.mjs';
 import { AvatarDetach, avatarDragCanTeleport } from './main/avatar-detach.mjs';
@@ -467,6 +476,7 @@ else {
 async function initializeDesktop() {
   // Running from source shows Electron's own Dock icon until Capri sets its own.
   if (process.platform === 'darwin') app.dock?.setIcon(applicationIcon);
+  installScreenPoints(screen);
   let window;
   let reportDesktopCrash;
   let gpuProcessFailures = 0;
@@ -1140,7 +1150,10 @@ async function initializeDesktop() {
   );
   const fullComputerAccess = new FullComputerAccess({
     file: path.join(state, 'full-computer-access.json'),
-    discover: async () => (await callApplicationBridge(root, { action: 'catalog_drives' })).drives,
+    discover: async () =>
+      process.platform === 'darwin'
+        ? ['/']
+        : (await callApplicationBridge(root, { action: 'catalog_drives' })).drives,
     confirm: (options) => confirmations.request(options),
     onChange: (value) => {
       if (!value.enabled) void computerControl.stop();
@@ -5829,8 +5842,21 @@ async function initializeDesktop() {
     translate: (text) => uiText(text, languages.value.interface),
   });
   let controlBorder = null;
-  const nativeEscape = process.platform === 'win32' ? new NativeEscapeStop({ root }) : null;
+  const nativeEscape = ['win32', 'darwin'].includes(process.platform)
+    ? new NativeEscapeStop({ root })
+    : null;
+  const macosPermissions = new MacosComputerPermissions({
+    systemPreferences,
+    // The helper asks macOS for Screen Recording on Capri's behalf (one prompt).
+    requestScreenRecording: () =>
+      promisify(execFile)(
+        macosHelperExecutable(root),
+        ['permissions', 'request', 'screen-recording'],
+        { env: macosHelperEnvironment(root), timeout: 10000, maxBuffer: 4096 },
+      ),
+  });
   const computerControl = new ComputerControl({
+    permissions: () => macosPermissions.check(),
     allowed: () => fullComputerAccess.enabled && applicationAccess.enabled,
     visionAvailable: () => screenVisionAvailable,
     canStart: () =>
@@ -5838,14 +5864,15 @@ async function initializeDesktop() {
         (workflowTurn || (chat.active && !chat.active.controller.signal.aborted)) && !shuttingDown,
       ),
     currentTurn: () => workflowTurn ?? chat.active?.id ?? null,
-    bridge: (command, options) =>
-      desktopCatalog.bridge(
-        root,
+    bridge: (command, options) => {
+      let request =
         command.action === 'computer_state'
           ? { ...command, ignoreProcessId: String(process.pid) }
-          : command,
-        options,
-      ),
+          : command;
+      if (process.platform === 'darwin' && controlBorder && request.action?.startsWith('computer_'))
+        request = { ...request, passThroughWindowIds: controlBorder.passThroughWindowIds() };
+      return desktopCatalog.bridge(root, request, options);
+    },
     pointerDuration: () =>
       (settingsPreview.computerAppearance ?? computerAppearance.value).pointerDuration,
     applicationAdapter: new ResolveAdapter({

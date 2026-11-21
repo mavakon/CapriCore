@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { writeJsonAtomic } from '../../packages/runtime/src/atomic-json.mjs';
 import { spotifySourceHash } from './native-build.mjs';
+import { macosHelperReady } from '../../packages/runtime/src/host/macos-helper.mjs';
 export function readSpotifyConfig(file) {
   const bytes = readFileSync(file);
   if (bytes.length > 2 * 1024 ** 2)
@@ -29,7 +30,8 @@ export function spotifyAccess(config, root, agentId) {
       agent.tools.alsoAllow?.includes('spotify_control'))
   );
 }
-export function spotifyBridgeReady(root) {
+export function spotifyBridgeReady(root, { platform = process.platform } = {}) {
+  if (platform === 'darwin') return macosHelperReady(root, { platform });
   try {
     const folder = path.join(root, '.runtime/spotify-bridge');
     const build = readSpotifyConfig(path.join(folder, 'build.json'));

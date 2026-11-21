@@ -4,7 +4,10 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { root } from '../../packages/runtime/src/index.mjs';
+import { macosHelperExecutable } from '../../packages/runtime/src/host/macos-helper.mjs';
 export function ensureAwareness() {
+  // macOS: window events come from the prebuilt Swift helper (npm run setup:macos-helpers).
+  if (process.platform === 'darwin') return macosHelperExecutable(root);
   if (process.platform !== 'win32') throw new Error('Windows event awareness requires Windows.');
   const source = path.join(root, 'integrations/awareness/native/WindowsEvents.cs'),
     hash = (value) => createHash('sha256').update(value).digest('hex');

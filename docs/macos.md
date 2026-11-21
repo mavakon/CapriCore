@@ -1,9 +1,11 @@
 # macOS (Apple silicon) — foundation
 
-Capri's desktop runs from source on macOS with Apple silicon (arm64). This is the
-first stage of the port: text chat, memory and the animated avatar, with local
-models on the Metal GPU or an OpenAI-compatible API. Voice, screen and computer
-control, and a signed `.app`/`.dmg` installer are separate follow-up work (see
+Capri's desktop runs from source on macOS with Apple silicon (arm64): text chat,
+memory and the animated avatar, with local models on the Metal GPU or an
+OpenAI-compatible API, plus computer control, screen capture, window awareness,
+Spotify playback control, the user-tool sandbox and the GPU meter through a Swift
+helper (see [Native helpers](#native-helpers)). Voice and a signed `.app`/`.dmg`
+installer are separate follow-up work (see
 [What is not done yet](#what-is-not-done-yet)).
 
 ## Run from source
@@ -11,11 +13,13 @@ control, and a signed `.app`/`.dmg` installer are separate follow-up work (see
 Requirements: macOS on Apple silicon, Node.js 24.22.1 or a later 24.x (see
 `.node-version`; `.npmrc` enforces the engine range), about 5 GB of free disk for
 the default model, and a checkout in an ordinary folder under your home folder
-(Capri refuses runtime paths that pass through symbolic links).
+(Capri refuses runtime paths that pass through symbolic links). The Swift helper
+needs the Xcode command line tools (`xcode-select --install`); Xcode itself is not
+required.
 
 ```sh
 npm ci
-npm run setup:macos   # pinned llama.cpp Metal build + Electron app bundle, into .runtime/
+npm run setup:macos   # pinned llama.cpp Metal build, Electron app bundle and the Swift helper, into .runtime/
 npm run setup         # choose a profile from detected memory
 npm run models:pull   # chat model + memory embedding model
 npm run desktop
@@ -57,6 +61,96 @@ keep conversation text out of logs.
 - The menu-bar icon uses the PNG artwork, because macOS Electron cannot decode
   `.ico`. The Dock icon is set from the same file.
 
+## Native helpers
+
+On Windows, computer control, screen capture, window observation and the other
+system integrations are C# and PowerShell helpers. On macOS they are one Swift
+program, `capri-macos-helper`, in `packages/macos-helpers/Sources`. It speaks the
+same JSON and binary protocols as the Windows helpers, so the JavaScript side
+only chooses which executable to start.
+
+### Building
+
+```sh
+npm run setup:macos-helpers          # builds when missing or out of date
+npm run setup:macos-helpers -- --force
+```
+
+`npm run setup:macos` runs the same build at the end; a failure there is reported
+but does not stop the rest of setup. The build:
+
+- finds `swiftc` with `xcrun`, compiles every `*.swift` file in one module
+  (`-O`, Swift 5 mode, `arm64-apple-macos14.0` or `x86_64-apple-macos14.0`);
+- signs the result ad hoc with the identifier `com.capri.macos-helper`;
+- writes it to `.runtime/macos-helpers/<first 16 hex of the source hash>/capri-macos-helper`;
+- writes `.runtime/macos-helpers/build.json` last (`sourceSha256`, `artifact`,
+  `executableSha256`, `target`), then removes earlier builds.
+
+`packages/runtime/src/host/macos-helper.mjs` resolves the helper for every
+caller. It refuses a helper whose receipt does not match the Swift sources (when
+the sources are present) or whose bytes do not match `executableSha256`, with a
+message that names `npm run setup:macos-helpers`. Every helper starts with a
+fixed environment (`HOME`, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `TMPDIR` inside
+`.runtime/tmp`, `LANG`), so no keys or tokens from Capri's environment reach it.
+
+### Subcommands
+
+| Command                                                                                | Replaces (Windows)               | What it does                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| _(none)_ or `desktop-actions`                                                          | `DesktopActions.cs`              | One JSON request on stdin, one JSON line out. `computer_state`, `computer_pointer`, `computer_click`, `computer_drag`, `computer_scroll`, `computer_keys`, `computer_type`, `computer_release`, `computer_window_exists` and `computer_watch_escape`, through Accessibility (AXUIElement) and CGEvent. Other application actions answer `MACOS_ACTION_UNAVAILABLE`. |
+| `screen-worker`                                                                        | `capture-display.ps1 -Worker`    | The binary frame pipe (`mode\|handle\|x\|y\|w\|h\|maxW\|maxH\|format` in, a 32-byte header and PNG or BGRA pixels out) through ScreenCaptureKit.                                                                                                                                                                                                                    |
+| `screen-capture [--owned-window N \| --display-window N] [--with-geometry \| --probe]` | `capture-display.ps1`            | One PNG of the active display (base64), or its bounds.                                                                                                                                                                                                                                                                                                              |
+| `window-events`                                                                        | `WindowsEvents.cs`               | App switches, full screen, lock and unlock, sleep and wake, idle after 5 minutes; with Accessibility, focused-window and tab changes. Titles and images are never reported.                                                                                                                                                                                         |
+| `spotify`                                                                              | `SpotifyBridge.cs`               | Spotify desktop control through its AppleScript dictionary. Never launches Spotify.                                                                                                                                                                                                                                                                                 |
+| `audio-endpoints list` / `capture <id>`                                                | `audio-endpoints.cs`             | Core Audio devices (`in:<UID>`, `out:<UID>`) and 16 kHz mono capture in the same `CAPRI-AUDIO-1` packet format. Outputs are captured through a Core Audio process tap (macOS 14.2 or later).                                                                                                                                                                        |
+| `gpu`                                                                                  | GPU inventory and load           | Apple GPU name, core count and load from IOKit. Memory is reported as shared, without a VRAM figure.                                                                                                                                                                                                                                                                |
+| `tool-sandbox`                                                                         | `tool-sandbox.cs` (AppContainer) | Runs an approved Node or Python user tool under a fixed Seatbelt profile (see below).                                                                                                                                                                                                                                                                               |
+| `permissions [request accessibility \| request screen-recording]`                      | —                                | Reads the privacy permissions; `request` shows the macOS prompt.                                                                                                                                                                                                                                                                                                    |
+| `version`                                                                              | —                                | `{"ok":true,"helper":"capri-macos","version":1}`.                                                                                                                                                                                                                                                                                                                   |
+
+Coordinates are global points with the origin at the top left of the main
+display, which is also what Electron uses on macOS, so the Windows DIP/pixel
+conversions are identity functions there (`apps/desktop/main/screen-points.mjs`).
+Key names keep the Windows vocabulary: `CTRL` presses Command, `ALT` Option and
+`WIN` Control.
+
+### Privacy permissions
+
+macOS grants these to the _responsible app_: `Capri.app` once it is packaged, and
+the app that started `npm run desktop` (Terminal, iTerm, an IDE) when running
+from source. The prompt and the list in System Settings → Privacy & Security
+name that app. Capri never changes these settings itself.
+
+| Permission             | Needed for                                                      | When macOS asks                                                                                          |
+| ---------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Accessibility          | Computer control, the Escape stop, window title and tab changes | Capri asks on the first computer-control request; it stops with "No input was sent" until it is allowed. |
+| Screen Recording       | Computer-control screenshots, screen frames, screen awareness   | Capri asks once per run when computer control starts. Capture fails cleanly until it is allowed.         |
+| Automation → Spotify   | Spotify control                                                 | On the first Spotify command. A refusal is reported as `automation_denied`.                              |
+| Microphone             | Microphone capture                                              | On first capture.                                                                                        |
+| System audio recording | Capturing an output device                                      | On first capture. Needs `NSAudioCaptureUsageDescription` in the app's Info.plist.                        |
+
+### Tool sandbox
+
+Approved user tools run as `/usr/bin/sandbox-exec -p <profile> <runtime>` with
+`(deny default)` plus `system.sb`. A tool can read its own code folder and the
+Node or Python runtime, read and write only its private output folder (also its
+`HOME` and `TMPDIR`), start no other program, and use the network only when its
+manifest allows it. The helper enforces a 256 MiB footprint, the manifest timeout
+and 64 KiB of output, and refuses linked or relative folders. Python tools use
+`.runtime/python/cpython-3.11.*-macos-aarch64-none/bin/python3`. Executable
+(`.exe`-style) tools are Windows-only.
+
+### Tests
+
+```sh
+node --test tests/macos-helpers.test.mjs          # JavaScript side, runs on every OS
+node --test tests/macos-helpers-native.test.mjs   # builds and runs the real helper (macOS only)
+```
+
+The native test sends no input, does not script Spotify and records no audio. It
+reads the screen only when Screen Recording is already allowed, and checks the
+Accessibility refusal (or a real observation, when allowed) without asking for it.
+
 ## Measured on an M4 Pro, 24 GB, macOS 26.7
 
 - `npm run setup:macos`: Metal device `MTL0: Apple M4 Pro` (about 18 GiB usable).
@@ -76,24 +170,34 @@ These were left for separate pieces of work:
   VAD, the request router, YAMNet) are platform-neutral. Use the router's
   `onnx/model_qint8_arm64.onnx` in place of the AVX2 file. Breeze TTS publishes
   only a Windows binary.
-- **Native helpers.** Everything under `apps/desktop/native`,
-  `integrations/*/native` and `packages/installer/windows` is C# or PowerShell.
-  This covers computer control, screen capture, window observation, the Escape
-  stop, task recording, the tool sandbox, Spotify accessibility, system-audio and
-  music capture, and the GPU monitor. These features stay off on macOS
-  (`process.platform === 'win32'` guards) until Swift replacements exist. Their
-  macOS equivalents are ScreenCaptureKit, Accessibility (AXUIElement), CGEvent
-  and Core Audio taps.
+- **Native features without a Swift version yet.** Task recording, YouTube Music
+  tab control, camera calls, the per-process and local-model load meters,
+  Windows media-session playback, Steam game launch, the desktop teleport menu
+  and virtual-audio-cable routing stay Windows-only. They are hidden or answer
+  "not available" on macOS. Spotify search, liked songs, the queue and library
+  browsing are not in Spotify's AppleScript dictionary; on macOS they answer
+  `unsupported`, while playback, volume, seek, shuffle, repeat and Spotify links
+  work. Other application actions of the desktop bridge (opening apps, files,
+  drives) answer `MACOS_ACTION_UNAVAILABLE`.
+- **Voice routing and music detection.** The audio helper lists and captures
+  devices on macOS, but call audio routing and music detection stay off until the
+  voice workers run on macOS.
 - **Installer and app identity.** Running from source shows the app as
   "Electron" (`com.github.Electron`) in the app switcher. A packaged `Capri.app`
   needs its own bundle ID and name, an `.icns` icon, the Node and llama.cpp
   runtimes inside the bundle, data outside it (for example
   `~/Library/Application Support/Capri`), and ad-hoc signing for personal use or
   a Developer ID plus notarization for distribution. The Windows updater
-  (`packages/updater`) does not apply.
-- **Resource meter.** RAM reads from `vm_stat`. GPU load, unified-memory use and
-  temperatures show as unknown on macOS (they come from Windows and NVIDIA
-  samplers); `powermetrics` or IOKit would be the macOS sources.
+  (`packages/updater`) does not apply. For the Swift helper, the bundle needs
+  `NSAppleEventsUsageDescription` (Spotify), `NSAudioCaptureUsageDescription`
+  (system audio) and `NSMicrophoneUsageDescription` in its Info.plist, and must
+  ship `.runtime/macos-helpers/build.json` with the helper. Without the Swift
+  sources, a packaged helper is checked only against its own digest, so re-signing
+  it (for example with a Developer ID) means writing `executableSha256` again
+  after signing.
+- **Resource meter.** RAM reads from `vm_stat` and GPU load from IOKit through
+  the helper. GPU memory and temperatures show as unknown on macOS: the GPU shares
+  system memory, and temperatures would need `powermetrics` (root).
 - **Not available on macOS:** the OpenVINO NPU option and CUDA voice training.
 - **Observed, not investigated:** replies sent with `npm run chat` did not appear
   in the open desktop window's transcript. The window may show only its own

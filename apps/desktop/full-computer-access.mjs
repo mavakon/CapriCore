@@ -2,24 +2,34 @@
 import { createHash } from 'node:crypto';
 import { Preferences } from './preferences.mjs';
 
-const valid = (value) => {
+// Windows grants each fixed drive (C:\\). macOS has one file system root; other
+// volumes are mounted inside it under /Volumes.
+const driveRoot = (platform) => (platform === 'darwin' ? /^\/$/ : /^[A-Z]:\\$/);
+const validator = (platform) => (value) => {
   if (
     !value ||
     typeof value.enabled !== 'boolean' ||
     !Array.isArray(value.drives) ||
     value.drives.length > 26 ||
     new Set(value.drives).size !== value.drives.length ||
-    value.drives.some((drive) => typeof drive !== 'string' || !/^[A-Z]:\\$/.test(drive))
+    value.drives.some((drive) => typeof drive !== 'string' || !driveRoot(platform).test(drive))
   )
     throw new Error('Invalid full computer access settings.');
   return { enabled: value.enabled, drives: [...value.drives] };
 };
+const accessDetail = {
+  win32:
+    'Capri will be able to use supported file, application, keyboard and mouse actions on your local drives without repeated confirmation. Requested actions can change your files and applications. You can revoke this access here at any time. Windows permissions and separate remote-provider settings still apply.',
+  darwin:
+    'Capri will be able to use supported file, application, keyboard and mouse actions on this Mac without repeated confirmation. Requested actions can change your files and applications. You can revoke this access here at any time. macOS privacy permissions and separate remote-provider settings still apply.',
+};
 
 /** UI and chat may request access; only the current host confirmation can grant it. */
 export class FullComputerAccess {
-  constructor({ file, discover, confirm, onChange = () => {} }) {
-    Object.assign(this, { discover, confirm, onChange });
-    this.preferences = new Preferences(file, { enabled: false, drives: [] }, valid);
+  constructor({ file, discover, confirm, onChange = () => {}, platform = process.platform }) {
+    Object.assign(this, { discover, confirm, onChange, platform });
+    this.valid = validator(platform);
+    this.preferences = new Preferences(file, { enabled: false, drives: [] }, this.valid);
     this.epoch = 0;
     this.enabling = false;
   }
@@ -56,8 +66,7 @@ export class FullComputerAccess {
       if (
         !(await this.confirm({
           title: 'Give access to the whole computer?',
-          detail:
-            'Capri will be able to use supported file, application, keyboard and mouse actions on your local drives without repeated confirmation. Requested actions can change your files and applications. You can revoke this access here at any time. Windows permissions and separate remote-provider settings still apply.',
+          detail: accessDetail[this.platform] ?? accessDetail.win32,
           confirmLabel: 'Give full computer access',
           danger: true,
           delayMs: 3000,
@@ -71,7 +80,7 @@ export class FullComputerAccess {
       signal?.throwIfAborted();
       if (epoch !== this.epoch) return this.snapshot();
       if (!drives.length) throw new Error('No local drives were detected.');
-      this.preferences.set(valid({ enabled: true, drives }));
+      this.preferences.set(this.valid({ enabled: true, drives }));
     } finally {
       this.enabling = false;
       this.onChange(this.snapshot());

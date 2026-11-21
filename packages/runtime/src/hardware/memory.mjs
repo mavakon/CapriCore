@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { findExecutable } from '../host/paths.mjs';
 import { windowsGpuSampler } from './windows-gpu.mjs';
+import { macosGpuSampler } from './macos-gpu.mjs';
 
 const run = promisify(execFile);
 const MiB = 1024 ** 2;
@@ -79,7 +80,11 @@ export function mergeGpuReadings(nvidia, windows) {
 async function readGpuMemory() {
   const [driver, native] = await Promise.allSettled([
     readNvidiaMemory(),
-    process.platform === 'win32' ? windowsGpuSampler.sample() : Promise.resolve([]),
+    process.platform === 'win32'
+      ? windowsGpuSampler.sample()
+      : process.platform === 'darwin'
+        ? macosGpuSampler.sample()
+        : Promise.resolve([]),
   ]);
   return mergeGpuReadings(
     driver.status === 'fulfilled' ? driver.value : [],

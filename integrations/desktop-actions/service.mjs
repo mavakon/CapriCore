@@ -7,6 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { APPLICATION_DEFAULTS, validateApplications } from './settings.mjs';
 import { ensureDesktopActions } from './provision.mjs';
 import { calculate, CALCULATOR_PROPERTIES, validateCalculation } from './calculator.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 export const schema = {
@@ -72,7 +76,9 @@ export function applicationPermissions(file) {
 }
 
 /** Resolve only the source-matched, hash-verified owned native executable. */
-export function applicationBridgeExecutable(root) {
+export function applicationBridgeExecutable(root, { platform = process.platform } = {}) {
+  // On macOS the Swift helper answers the same requests (its default command).
+  if (platform === 'darwin') return macosHelperExecutable(root, { platform });
   const directory = path.join(root, '.runtime/desktop-actions'),
     metadata = path.join(directory, 'build.json');
   const currentHash = hash(
@@ -117,13 +123,16 @@ export function callApplicationBridge(
     const child = spawn(executable, [], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        SystemRoot: windows,
-        WINDIR: windows,
-        PATH: path.join(windows, 'System32'),
-        TEMP: path.join(root, '.runtime/tmp'),
-        TMP: path.join(root, '.runtime/tmp'),
-      },
+      env:
+        process.platform === 'darwin'
+          ? macosHelperEnvironment(root)
+          : {
+              SystemRoot: windows,
+              WINDIR: windows,
+              PATH: path.join(windows, 'System32'),
+              TEMP: path.join(root, '.runtime/tmp'),
+              TMP: path.join(root, '.runtime/tmp'),
+            },
     });
     if (command.action === 'chess_view' && child.pid) {
       try {

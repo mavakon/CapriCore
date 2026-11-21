@@ -100,6 +100,18 @@ export class ControlOverlay {
       this.script('resumePointer');
     }
   }
+  /**
+   * Native window numbers of the click-through borders. macOS Accessibility
+   * hit-testing can report them although mouse events pass through, so the
+   * helper is told which Capri windows to look through.
+   */
+  passThroughWindowIds() {
+    return this.windows.flatMap((border) => {
+      if (border.isDestroyed()) return [];
+      const id = /^window:([1-9]\d{0,9}):\d+$/.exec(border.getMediaSourceId?.() ?? '')?.[1];
+      return id ? [id] : [];
+    });
+  }
   assertOpen(border) {
     if (this.closed || border?.isDestroyed()) throw Error('Computer control indicator closed.');
   }

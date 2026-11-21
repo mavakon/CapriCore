@@ -4,11 +4,53 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { validateObservation } from './initiative-policy.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
+
+/** Starts the metadata-only observer: Capri.WindowsEvents.exe, or the macOS helper. */
+function observerProcess(root, platform) {
+  if (platform === 'darwin')
+    return [
+      macosHelperExecutable(root, { platform }),
+      ['window-events'],
+      { stdio: ['pipe', 'pipe', 'pipe'], env: macosHelperEnvironment(root) },
+    ];
+  const hash = (value) => createHash('sha256').update(value).digest('hex'),
+    directory = path.join(root, '.runtime/awareness');
+  const build = JSON.parse(readFileSync(path.join(directory, 'build.json'), 'utf8'));
+  if (
+    !/^[a-f0-9]{16}[\\/]Capri\.WindowsEvents\.exe$/.test(build.artifact) ||
+    build.sourceSha256 !==
+      hash(readFileSync(path.join(root, 'integrations/awareness/native/WindowsEvents.cs')))
+  )
+    throw new Error('Windows observer needs rebuilding');
+  const executable = path.join(directory, build.artifact);
+  if (hash(readFileSync(executable)) !== build.executableSha256)
+    throw new Error('Windows observer integrity check failed');
+  const windows = process.env.SystemRoot ?? 'C:\\Windows';
+  return [
+    executable,
+    [],
+    {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        SystemRoot: windows,
+        WINDIR: windows,
+        PATH: path.join(windows, 'System32'),
+        TEMP: path.join(root, '.runtime/tmp'),
+        TMP: path.join(root, '.runtime/tmp'),
+      },
+    },
+  ];
+}
 
 export class WindowsObserver extends EventEmitter {
-  constructor({ root, verification = false } = {}) {
+  constructor({ root, verification = false, platform = process.platform, spawnImpl = spawn } = {}) {
     super();
-    Object.assign(this, { root, verification });
+    Object.assign(this, { root, verification, platform, spawnImpl });
     this.status = 'off';
     this.generation = 0;
     this.lastFailure = null;
@@ -38,32 +80,10 @@ export class WindowsObserver extends EventEmitter {
       filterProcessId < 0
     )
       throw new Error('Invalid observer startup');
-    const hash = (value) => createHash('sha256').update(value).digest('hex'),
-      directory = path.join(this.root, '.runtime/awareness');
-    const build = JSON.parse(readFileSync(path.join(directory, 'build.json'), 'utf8'));
-    if (
-      !/^[a-f0-9]{16}[\\/]Capri\.WindowsEvents\.exe$/.test(build.artifact) ||
-      build.sourceSha256 !==
-        hash(readFileSync(path.join(this.root, 'integrations/awareness/native/WindowsEvents.cs')))
-    )
-      throw new Error('Windows observer needs rebuilding');
-    const executable = path.join(directory, build.artifact);
-    if (hash(readFileSync(executable)) !== build.executableSha256)
-      throw new Error('Windows observer integrity check failed');
-    const generation = ++this.generation,
-      windows = process.env.SystemRoot ?? 'C:\\Windows';
+    const [executable, args, options] = observerProcess(this.root, this.platform);
+    const generation = ++this.generation;
     this.publish('starting');
-    const child = spawn(executable, [], {
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        SystemRoot: windows,
-        WINDIR: windows,
-        PATH: path.join(windows, 'System32'),
-        TEMP: path.join(this.root, '.runtime/tmp'),
-        TMP: path.join(this.root, '.runtime/tmp'),
-      },
-    });
+    const child = this.spawnImpl(executable, args, options);
     this.child = child;
     this.starting = new Promise((resolve, reject) => {
       let pending = '',

@@ -19,6 +19,10 @@ import path from 'node:path';
 import { toolManifest, validateToolArguments } from './tool-manifest.mjs';
 import { writeJsonAtomic } from './storage.mjs';
 import { prepareNativeHelper } from './native-helper.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const idValid = (value) => typeof value === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(value);
 const secretPattern =
@@ -470,9 +474,14 @@ export class UserTools {
     }
   }
   async isolated({ manifest, code, output, parameters, settings, inputFiles, signal, id }) {
-    if (process.platform !== 'win32')
+    // macOS: the Swift helper runs the tool under a fixed Seatbelt profile.
+    const mac = process.platform === 'darwin';
+    if (process.platform !== 'win32' && !mac)
       throw new Error('Windows AppContainer isolation is required for user tools.');
-    const helper = await abortable(prepareNativeHelper(this.root, 'tool-sandbox'), signal);
+    const system = mac ? 'macOS' : 'Windows';
+    const helper = mac
+      ? macosHelperExecutable(this.root)
+      : await abortable(prepareNativeHelper(this.root, 'tool-sandbox'), signal);
     const profile = 'Capri.Tool.' + digest(this.root + '\0' + id).slice(0, 24);
     let executable, runtime, args;
     const entry = path.join(code, ...manifest.entry.split('/'));
@@ -483,15 +492,20 @@ export class UserTools {
       args = ['--preserve-symlinks', '--preserve-symlinks-main', entry, ...manifest.arguments];
     } else if (manifest.runtime === 'python') {
       const parent = path.join(this.root, '.runtime/python');
-      const candidate = (await readdir(parent))
-        .filter((name) => /^cpython-3\.11\.[\d]+-windows-x86_64-none$/.test(name))
+      const pattern = mac
+        ? /^cpython-3\.11\.[\d]+-macos-aarch64-none$/
+        : /^cpython-3\.11\.[\d]+-windows-x86_64-none$/;
+      const candidate = (await readdir(parent).catch(() => []))
+        .filter((name) => pattern.test(name))
         .sort()
         .at(-1);
       if (!candidate) throw new Error('Install Capri’s Python runtime to run this tool.');
       runtime = path.join(parent, candidate);
-      executable = path.join(runtime, 'python.exe');
+      executable = mac ? path.join(runtime, 'bin/python3') : path.join(runtime, 'python.exe');
       args = ['-I', '-u', '-X', 'utf8', entry, ...manifest.arguments];
     } else {
+      if (mac)
+        throw new Error('Executable tools are not available on macOS yet. Use Node or Python.');
       if (path.extname(entry).toLowerCase() !== '.exe')
         throw new Error('Executable tools must use a local .exe entry.');
       runtime = code;
@@ -505,28 +519,31 @@ export class UserTools {
       )
         throw new Error('Linked runtime paths are not allowed.');
     const windows = process.env.SystemRoot ?? 'C:\\Windows';
-    await promisify(execFile)(
-      path.join(windows, 'System32/icacls.exe'),
-      [output, '/setintegritylevel', '(OI)(CI)L', '/q'],
-      { windowsHide: true, timeout: 5000, signal },
-    );
+    if (!mac)
+      await promisify(execFile)(
+        path.join(windows, 'System32/icacls.exe'),
+        [output, '/setintegritylevel', '(OI)(CI)L', '/q'],
+        { windowsHide: true, timeout: 5000, signal },
+      );
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
       // Windows resolves the AppContainer profile in the trusted launcher. The
       // script gets a separate explicit environment block built by that launcher.
-      const child = spawn(helper, [], {
+      const child = spawn(helper, mac ? ['tool-sandbox'] : [], {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'ignore'],
-        env: {
-          SystemRoot: windows,
-          WINDIR: windows,
-          USERPROFILE: process.env.USERPROFILE,
-          LOCALAPPDATA: process.env.LOCALAPPDATA,
-          APPDATA: process.env.APPDATA,
-          PATH: path.join(windows, 'System32'),
-          TEMP: runRootFor(output),
-          TMP: runRootFor(output),
-        },
+        env: mac
+          ? macosHelperEnvironment(this.root)
+          : {
+              SystemRoot: windows,
+              WINDIR: windows,
+              USERPROFILE: process.env.USERPROFILE,
+              LOCALAPPDATA: process.env.LOCALAPPDATA,
+              APPDATA: process.env.APPDATA,
+              PATH: path.join(windows, 'System32'),
+              TEMP: runRootFor(output),
+              TMP: runRootFor(output),
+            },
       });
       let text = '',
         size = 0;
@@ -554,10 +571,15 @@ export class UserTools {
         signal.removeEventListener('abort', abort);
         clearTimeout(killTimer);
         if (cancelled)
-          await promisify(execFile)(helper, ['--cleanup', profile], {
-            windowsHide: true,
-            timeout: 3000,
-          }).catch(() => {});
+          await promisify(execFile)(
+            helper,
+            [...(mac ? ['tool-sandbox'] : []), '--cleanup', profile],
+            {
+              windowsHide: true,
+              timeout: 3000,
+              ...(mac ? { env: macosHelperEnvironment(this.root) } : {}),
+            },
+          ).catch(() => {});
         if (cancelled) {
           reject(new Error('The user tool was cancelled or timed out.'));
           return;
@@ -565,13 +587,16 @@ export class UserTools {
         let result;
         try {
           result = JSON.parse(text);
-          if (result.ok !== true || result.appContainer !== true) throw new Error();
+          const isolatedBy = mac
+            ? result.sandbox === 'macos-seatbelt'
+            : result.appContainer === true;
+          if (result.ok !== true || !isolatedBy) throw new Error();
           resolve(JSON.parse(result.output));
         } catch {
           const code = Number.isInteger(result?.exitCode)
             ? ' exit ' + result.exitCode
             : Number.isInteger(result?.code)
-              ? ' Windows ' + result.code
+              ? ` ${system} ` + result.code
               : '';
           const stage = [
             'request',
@@ -607,7 +632,7 @@ export class UserTools {
             : '';
           reject(
             new Error(
-              'The isolated tool failed, timed out, returned invalid JSON or was blocked by Windows.' +
+              `The isolated tool failed, timed out, returned invalid JSON or was blocked by ${system}.` +
                 stage +
                 reason,
             ),
