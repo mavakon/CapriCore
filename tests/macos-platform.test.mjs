@@ -142,3 +142,21 @@ test('macOS available memory counts reclaimable inactive pages', async () => {
     }) > 0,
   );
 });
+
+test('the RAM meter uses reclaimable memory on macOS', async () => {
+  const { readAvailableMemoryBytes } = await import(
+    '../packages/runtime/src/hardware/available-memory.mjs'
+  );
+  const { MemorySampler } = await import('../packages/runtime/src/hardware/memory.mjs');
+  const sample =
+    'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 1000.\nPages inactive: 3000.\n';
+  assert.equal(
+    await readAvailableMemoryBytes({ platform: 'darwin', run: async () => sample }),
+    4000 * 16384,
+  );
+  const sampler = new MemorySampler({
+    readGpu: async () => [],
+    ram: async () => ({ percent: 50 }),
+  });
+  assert.equal((await sampler.sample()).ram.percent, 50);
+});

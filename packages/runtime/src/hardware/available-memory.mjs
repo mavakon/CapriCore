@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { freemem } from 'node:os';
 
 /**
@@ -31,6 +32,28 @@ export function availableMemoryBytes({
   if (platform === 'darwin')
     try {
       return parseVmStat(run('/usr/bin/vm_stat')) ?? freemem();
+    } catch {
+      return freemem();
+    }
+  return freemem();
+}
+
+const execFileAsync = promisify(execFile);
+/** Non-blocking variant for periodic samplers in the Electron main process. */
+export async function readAvailableMemoryBytes({
+  platform = process.platform,
+  run = async (command) =>
+    (
+      await execFileAsync(command, [], {
+        encoding: 'utf8',
+        timeout: 3000,
+        env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+      })
+    ).stdout,
+} = {}) {
+  if (platform === 'darwin')
+    try {
+      return parseVmStat(await run('/usr/bin/vm_stat')) ?? freemem();
     } catch {
       return freemem();
     }

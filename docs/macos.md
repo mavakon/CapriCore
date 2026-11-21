@@ -91,6 +91,9 @@ These were left for separate pieces of work:
   `~/Library/Application Support/Capri`), and ad-hoc signing for personal use or
   a Developer ID plus notarization for distribution. The Windows updater
   (`packages/updater`) does not apply.
+- **Resource meter.** RAM reads from `vm_stat`. GPU load, unified-memory use and
+  temperatures show as unknown on macOS (they come from Windows and NVIDIA
+  samplers); `powermetrics` or IOKit would be the macOS sources.
 - **Not available on macOS:** the OpenVINO NPU option and CUDA voice training.
 - **Observed, not investigated:** replies sent with `npm run chat` did not appear
   in the open desktop window's transcript. The window may show only its own
