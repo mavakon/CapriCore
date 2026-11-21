@@ -11,6 +11,7 @@ do not need a GitHub account, invitation or token.
 | Topic                                       | Guide                                                                                        |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Install, upgrade or repair                  | [Installation wizard](installation-wizard.md), [manual/source installation](installation.md) |
+| Run from source on macOS (Apple silicon)    | [macOS foundation](macos.md)                                                                 |
 | Public updates and recovery                 | [Updates](updates.md)                                                                        |
 | Local language models and Hugging Face GGUF | [Model selection](models.md)                                                                 |
 | OpenAI-compatible cloud and local APIs      | [External AI providers](external-api.md)                                                     |
