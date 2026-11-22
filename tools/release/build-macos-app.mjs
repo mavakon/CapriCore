@@ -58,7 +58,7 @@ import {
   llamaBundleDirectory,
 } from '../../packages/runtime/src/host/platform.mjs';
 import { llamaBundleReady } from '../../packages/runtime/src/host/llama-bundle.mjs';
-import { buildHelpers } from './macos-helpers.mjs';
+import { buildHelpers, verifyHelpers } from './macos-helpers.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const read = (file) => JSON.parse(readFileSync(path.join(root, file), 'utf8'));
@@ -331,6 +331,7 @@ async function main() {
   run('/usr/bin/xattr', ['-cr', bundle]);
   run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', bundle]);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);
+  verifyHelpers({ payload });
   log('signed Capri.app ad hoc.');
 
   const staging = path.join(work, 'dmg');

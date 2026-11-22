@@ -76,6 +76,13 @@ import {
   stageMacosUpdate,
 } from '../packages/updater/src/macos.mjs';
 import { UpdateService } from '../apps/desktop/update-service.mjs';
+import {
+  MACOS_HELPERS,
+  buildHelpers,
+  macosHelper,
+  verifyHelpers,
+} from '../tools/release/macos-helpers.mjs';
+import { macosHelperSourceHash } from '../packages/runtime/src/host/macos-helper.mjs';
 import { installedByMacApp } from '../packages/runtime/src/desktop-launcher.mjs';
 
 const repository = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -968,4 +975,81 @@ test('the command line opens Capri.app for folders the app installed', (t) => {
   );
   assert.equal(installedByMacApp(root, 'darwin'), true);
   assert.equal(installedByMacApp(root, 'win32'), false);
+});
+
+test('the app build compiles the Swift helper into the payload and checks its outputs', async (t) => {
+  const payload = temporary(t);
+  const artifact = path.join(payload, '.runtime/macos-helpers/0123456789abcdef/capri-macos-helper');
+  const calls = [];
+  const helper = macosHelper({
+    async buildHelper(root, options) {
+      calls.push({ root, ...options, log: typeof options.log });
+      mkdirSync(path.dirname(artifact), { recursive: true });
+      writeFileSync(artifact, 'helper');
+      writeFileSync(path.join(payload, '.runtime/macos-helpers/build.json'), '{}');
+      return artifact;
+    },
+  });
+  const logged = [];
+  assert.equal(
+    await buildHelpers({
+      root: repository,
+      payload,
+      helpers: [helper],
+      log: (m) => logged.push(m),
+    }),
+    1,
+  );
+  // Built from the payload's own sources, always fresh, for the app's processor.
+  assert.deepEqual(calls, [
+    { root: payload, force: true, arch: 'arm64', platform: 'darwin', log: 'function' },
+  ]);
+  assert.deepEqual(logged, [
+    'built the Capri macOS helper: .runtime/macos-helpers/0123456789abcdef/capri-macos-helper, ' +
+      '.runtime/macos-helpers/build.json.',
+  ]);
+  assert.deepEqual(
+    MACOS_HELPERS.map((entry) => entry.name),
+    ['Capri macOS'],
+  );
+  // The sources ship too, so the installed helper is checked against them.
+  assert.equal(shippedSourceFile('packages/macos-helpers/Sources/main.swift'), true);
+
+  const fake = (outputs) => ({ name: 'fake', build: async () => outputs });
+  for (const outputs of [undefined, [], ['missing'], [artifact]])
+    await assert.rejects(buildHelpers({ root: repository, payload, helpers: [fake(outputs)] }), {
+      message: /The fake helper (named no output|did not produce)/,
+    });
+});
+
+test('a helper whose executable changed after its receipt was written fails the build', (t) => {
+  const payload = temporary(t);
+  const sources = path.join(payload, 'packages/macos-helpers/Sources');
+  mkdirSync(sources, { recursive: true });
+  writeFileSync(path.join(sources, 'main.swift'), 'print("Capri")\n');
+  const folder = path.join(payload, '.runtime/macos-helpers');
+  const artifact = '0123456789abcdef/capri-macos-helper';
+  mkdirSync(path.join(folder, path.dirname(artifact)), { recursive: true });
+  writeFileSync(path.join(folder, artifact), 'signed helper');
+  writeFileSync(
+    path.join(folder, 'build.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      sourceSha256: macosHelperSourceHash(payload),
+      artifact,
+      executableSha256: sha('signed helper'),
+      target: 'arm64-apple-macos14.0',
+    }),
+  );
+  const helpers = [macosHelper()];
+  verifyHelpers({ payload, helpers });
+  // As if signing the whole bundle had re-signed the helper.
+  writeFileSync(path.join(folder, artifact), 'signed again');
+  assert.throws(() => verifyHelpers({ payload, helpers }), /integrity check failed/);
+  // Sources that no longer match the receipt are refused as well.
+  writeFileSync(path.join(folder, artifact), 'signed helper');
+  writeFileSync(path.join(sources, 'main.swift'), 'print("changed")\n');
+  assert.throws(() => verifyHelpers({ payload, helpers }), /out of date/);
+  // Entries without a check are skipped.
+  verifyHelpers({ payload, helpers: [{ name: 'plain', build: async () => [] }] });
 });
