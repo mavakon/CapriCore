@@ -2306,6 +2306,25 @@ async function avatarComposerAction(event) {
     ) {
       void inputMic.onclick();
       accepted = true;
+    } else if (
+      action.type === 'ask' &&
+      typeof action.text === 'string' &&
+      !attachmentComposer.items.length
+    ) {
+      // A message from the macOS menu bar panel. Any draft here is kept.
+      const draft = elements.message.value;
+      elements.message.value = action.text;
+      controls();
+      if (!elements.send.disabled) {
+        presence.touch();
+        void send();
+        accepted = true;
+      }
+      if (draft !== elements.message.value) {
+        elements.message.value = draft;
+        sizeInput();
+        controls();
+      }
     } else if (action.type === 'files' && !attachmentComposer.button.disabled) {
       const files = action.files.map(({ name, bytes }) => new File([bytes], name));
       if (action.overflow) files.push(new File([], ''));

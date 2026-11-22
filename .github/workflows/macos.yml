@@ -75,3 +75,6 @@ jobs:
       - name: Desktop - inference API
         if: ${{ !cancelled() }}
         run: node tools/verify/verify-inference-api.mjs
+      - name: Desktop - menu bar, app menu and panel
+        if: ${{ !cancelled() }}
+        run: node tools/verify/verify-macos-menu-bar.mjs

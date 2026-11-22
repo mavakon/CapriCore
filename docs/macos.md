@@ -70,7 +70,7 @@ access to Capri's saved credentials once.
 
 ### Uninstall
 
-Quit Capri (menu bar icon → Quit), then move `/Applications/Capri.app`,
+Quit Capri (⌘Q, or right-click the menu bar bolt → Quit and unload models), then move `/Applications/Capri.app`,
 `~/Library/Application Support/Capri` (this deletes conversations, memory and
 models), `~/Library/Logs/Capri` and `~/Library/Caches/com.capri-core.desktop` to
 the Trash.
@@ -201,8 +201,35 @@ keep conversation text out of logs.
   pages). `os.freemem()` counts only free pages on macOS and reads as pressure.
 - Saved credentials use Electron `safeStorage`, which is backed by the macOS
   Keychain. No change was needed.
-- The menu-bar icon uses the PNG artwork, because macOS Electron cannot decode
-  `.ico`. The Dock icon is set from the same file.
+- The Dock icon of a run from source is set from the PNG artwork, because macOS
+  Electron cannot decode `.ico`.
+
+## Menu bar, app menu and Dock
+
+`apps/desktop/main/macos-menu-bar.mjs` keeps macOS native where it insists and
+Capri's style everywhere else:
+
+- The menu bar icon is her double bolt as a one-color template image, drawn and
+  encoded as PNG at 1x and 2x when first needed, so macOS tints it for light and
+  dark menu bars. Clicking it opens her panel
+  (`apps/desktop/renderer/menu-bar-panel.*`): a message box that sends to her
+  conversation and brings her back to answer, Microphone, Voice and Focus mode
+  tiles, and her main actions. Right-clicking still opens the full Capri menu.
+- With "Show her mood" on, the bolt shows listening, thinking, speaking (the
+  glitch copies flicker) and asleep, and a running timer counts down beside it.
+  The icon only changes when the state does, on Capri's existing 400 ms tick.
+- The app menu uses her wording: About, Settings (⌘,), Show Capri, Teleport,
+  Return to frame, Focus mode, Start with my Mac, Live in the Dock, Hide Capri
+  (⌘H), Let her sleep and Quit and unload models (⌘Q), plus Edit (so copy and
+  paste work) and Window. Electron's Reload and developer tools menus are gone.
+- Settings → General → On your Mac holds the same switches and the icon style
+  (glitch bolt, plain bolt or the full-color app icon). They are saved in
+  `data/desktop/menu-bar.json`, except the login item, which lives in macOS
+  (System Settings → General → Login Items). Only the installed Capri.app can add
+  the login item; a run from source hides that switch.
+- With "Live in the Dock" off Capri is an accessory app: no Dock icon and no ⌘Tab
+  entry, but she stays on the desktop and in the menu bar. macOS does not show
+  the app menu for accessory apps; use the bolt's panel or right-click menu.
 
 ## Voice and speech recognition
 
@@ -409,7 +436,9 @@ every pull request (free for public repositories, about 9 minutes):
   Metal.
 - The desktop (Electron) verifications that pass on macOS: companion settings,
   button feedback, languages, window dimming, app catalog settings, Spotify
-  settings and the inference API.
+  settings, the inference API and the menu bar
+  (`tools/verify/verify-macos-menu-bar.mjs`: app menu, template icon, panel,
+  quick ask and the On your Mac settings).
 
 Run the same unit check locally with `node tools/checks/test-known-failures.mjs`.
 

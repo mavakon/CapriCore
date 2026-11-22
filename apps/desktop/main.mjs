@@ -233,6 +233,14 @@ import { StartupProgress, coreStartupFailure } from './startup-progress.mjs';
 import { loadStartupIntro, startupIntroSnapshot } from './startup-intro-assets.mjs';
 import { StartupIntroGate } from './main/startup-intro.mjs';
 import {
+  MacMenuBar,
+  MENU_BAR_DEFAULTS,
+  validateMenuBarSettings,
+  menuBarMood,
+  nextTimerRemaining,
+  shortModelName,
+} from './main/macos-menu-bar.mjs';
+import {
   recognitionModelsInstalled,
   speechModelsInstalled,
   ENGLISH_VOICE_SETUP_MESSAGE,
@@ -833,7 +841,7 @@ async function initializeDesktop() {
     startupIntro: startupIntroPack,
   });
 
-  let tray, regions, pointer, controlTimer, saveTimer, layoutSaveTimer;
+  let tray, menuBar, regions, pointer, controlTimer, saveTimer, layoutSaveTimer;
   let attachmentViewer;
   let windowFootprint, compactPlacement;
   let avatarDetach, avatarClickReactions, avatarComposer, wildTabs;
@@ -937,6 +945,15 @@ async function initializeDesktop() {
     COMPANION_DEFAULTS,
     validateCompanionSettings,
   );
+  // The menu bar icon, panel, Dock and login item choices exist only on macOS.
+  const menuBarPreferences =
+    process.platform === 'darwin'
+      ? new Preferences(
+          path.join(state, 'menu-bar.json'),
+          MENU_BAR_DEFAULTS,
+          validateMenuBarSettings,
+        )
+      : null;
   const inferenceStartup = new Preferences(
     path.join(state, 'inference-startup.json'),
     INFERENCE_STARTUP_DEFAULTS,
@@ -5814,6 +5831,153 @@ async function initializeDesktop() {
     else menu.popup({ window });
   }
 
+  async function requestSleep() {
+    if (
+      await confirmations.request({
+        title: 'Unload models and sleep?',
+        detail: 'Models will be loaded again when you wake Capri.',
+        confirmLabel: 'Unload models',
+      })
+    )
+      await sleepService.sleep();
+  }
+  const menuBarText = (key) => uiText(key, languages.value.interface);
+  const capriAsleep = () => ['sleeping', 'asleep'].includes(sleepService.phase);
+  function menuBarState() {
+    return {
+      language: languages.value.interface,
+      focusMode,
+      canTeleport: Boolean(
+        canTeleport() && (avatarDetach?.phase === 'attached' || avatarDetach?.available),
+      ),
+      canReturn: Boolean(avatarDetach?.available),
+      asleep: capriAsleep(),
+    };
+  }
+  function currentMenuBarMood() {
+    return menuBarMood({
+      asleep: capriAsleep() || backendState.phase === 'asleep',
+      speaking: playbackBusy,
+      thinking: Boolean(currentChatTask || chat.active),
+      listening: Boolean(microphone.capture),
+    });
+  }
+  function menuBarPanelState() {
+    const text = menuBarText;
+    const mood = currentMenuBarMood();
+    const { canTeleport: teleport, canReturn, asleep } = menuBarState();
+    const phase =
+      mood === 'idle'
+        ? ({ ready: 'Ready', offline: 'OFFLINE' }[backendState.phase] ?? 'Connecting')
+        : {
+            listening: 'Listening',
+            thinking: 'Thinking',
+            speaking: 'Speaking',
+            asleep: 'Sleeping',
+          }[mood];
+    const model = rt.nativeNpu
+      ? nativeNpu?.model
+      : rt.remote.enabled
+        ? rt.remote.model
+        : localModelName;
+    return {
+      language: languages.value.interface,
+      direction:
+        INTERFACE_LOCALES.find(({ id }) => id === languages.value.interface)?.direction ?? 'ltr',
+      mood,
+      status: [text(phase), rt.remote.enabled ? 'API' : text('Local'), shortModelName(model)]
+        .filter(Boolean)
+        .join(' · '),
+      labels: {
+        panel: text('Quick actions'),
+        message: text('Message Capri'),
+        placeholder: text('Talk to Capri…'),
+        send: text('Send message'),
+      },
+      toggles: [
+        {
+          id: 'microphone',
+          label: text('Microphone'),
+          on: Boolean(microphone.capture),
+          enabled: asrAllowed && asrInstalled && ['ready', 'asleep'].includes(backendState.phase),
+        },
+        { id: 'voice', label: text('Voice'), on: Boolean(voice.enabled), enabled: true },
+        { id: 'focus', label: text('Focus mode'), on: focusMode, enabled: true },
+      ],
+      actions: [
+        { id: 'show', label: text('Show Capri'), shortcut: '⇧⌘Space' },
+        { id: 'teleport', label: text('Teleport Capri'), enabled: teleport },
+        { id: 'return', label: text('Return to frame'), enabled: canReturn },
+        { id: 'settings', label: text('Settings') + '…', shortcut: '⌘,' },
+        { separator: true },
+        { id: 'sleep', label: text('Sleep'), tone: 'sleep', enabled: !asleep },
+        { id: 'quit', label: text('Quit and unload models'), tone: 'danger', shortcut: '⌘Q' },
+      ],
+    };
+  }
+  async function menuBarPanelAction(action, value, panel) {
+    if (action === 'ask') {
+      // Asking from the menu bar brings her back to answer.
+      if (focusMode || !window?.isVisible()) restoreCompanion();
+      const accepted = await dispatchAvatarComposerAction({ type: 'ask', text: value }).catch(
+        () => false,
+      );
+      if (accepted) panel.hide();
+      return accepted;
+    }
+    if (action === 'microphone') {
+      restoreCompanion();
+      emit({ type: 'microphone.toggle-request' });
+      return true;
+    }
+    if (action === 'voice') {
+      await voiceSkills.output.setEnabled(!voice.enabled, 'host');
+      return true;
+    }
+    if (action === 'focus') {
+      if (focusMode) restoreCompanion();
+      else enterFocusMode();
+      return true;
+    }
+    panel.hide();
+    if (action === 'show') restoreCompanion();
+    else if (action === 'teleport') await teleportToCursor().catch(() => {});
+    else if (action === 'return') await returnAvatar().catch(() => {});
+    else if (action === 'settings') await settingsHost.open();
+    else if (action === 'sleep') await requestSleep();
+    else if (action === 'quit') await quitAndUnload();
+    return true;
+  }
+  function createMenuBar() {
+    return new MacMenuBar({
+      electron: { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, screen },
+      preferences: menuBarPreferences,
+      // Full color: today's icon, the app icon at menu bar height.
+      colorIcon: () => nativeImage.createFromPath(applicationIcon).resize({ height: 18 }),
+      text: menuBarText,
+      menuState: menuBarState,
+      mood: currentMenuBarMood,
+      timer: () =>
+        skillEnabled('capri.timers') ? nextTimerRemaining(companionActions.time.snapshot()) : null,
+      panelState: menuBarPanelState,
+      panelAction: menuBarPanelAction,
+      // Only the installed Capri.app can register itself; a source run would add Electron.
+      loginSupported: app.isPackaged && Boolean(process.env.CAPRI_MACOS_APP) && !verification,
+      actions: {
+        contextMenu: () => void openMenu(true).catch(() => {}),
+        settings: () => void settingsHost.open().catch(console.error),
+        show: () => restoreCompanion(),
+        teleport: () => void teleportToCursor().catch(() => {}),
+        returnToFrame: () => void returnAvatar().catch(() => {}),
+        focus: (value) => (value ? enterFocusMode() : restoreCompanion()),
+        hide: () => hideCompanionToTray(),
+        sleep: () => void requestSleep().catch(console.error),
+        quit: () => void quitAndUnload().catch(console.error),
+        changed: (settings) => emit({ type: 'macos-menu-bar', settings }),
+      },
+    });
+  }
+
   const handle = createIpcHandler(ipcMain, {
     getWindow: () => window,
     url: rendererUrl,
@@ -6852,15 +7016,10 @@ async function initializeDesktop() {
         emit({ type: 'settings.toggle-portrait' });
       else if (action === 'microphone') emit({ type: 'microphone.toggle-request' });
       else if (action === 'quit') await quitAndUnload();
-      else if (action === 'sleep') {
-        if (
-          await confirmations.request({
-            title: 'Unload models and sleep?',
-            detail: 'Models will be loaded again when you wake Capri.',
-            confirmLabel: 'Unload models',
-          })
-        )
-          await sleepService.sleep();
+      else if (action === 'sleep') await requestSleep();
+      else if (action === 'macos-menu-bar') {
+        if (role !== 'settings' || !menuBar) throw new Error('Unsupported window action');
+        return menuBar.update(value);
       } else throw new Error('Unsupported window action');
       return true;
     });
@@ -8434,6 +8593,7 @@ async function initializeDesktop() {
           ...(rt.remote.enabled ? { providerHost: new URL(rt.remote.baseUrl).hostname } : {}),
         },
         windowSettings: { alwaysOnTop: saved.alwaysOnTop !== false, focusMode, avatarOnly },
+        macosMenuBar: role === 'settings' ? (menuBar?.settingsSnapshot() ?? null) : null,
         callCamera: callCamera.snapshot(),
         settingsVersions: settingsVersions(),
         screenSettings: media.screen.preferences(),
@@ -9834,21 +9994,23 @@ async function initializeDesktop() {
     activeMask = maskFor(avatar.currentId);
     pointer.start();
 
-    // macOS cannot decode .ico; the menu bar takes an 18 pt image.
-    tray = new Tray(
-      process.platform === 'darwin'
-        ? nativeImage.createFromPath(applicationIcon).resize({ height: 18 })
-        : path.join(root, 'assets/default/app.ico'),
-    );
+    if (menuBarPreferences) {
+      // macOS: her bolt in the menu bar opens her panel; right-click keeps the full menu.
+      menuBar = createMenuBar();
+      tray = menuBar.start();
+      if (verification) globalThis.capriMenuBarVerification = menuBar;
+    } else {
+      tray = new Tray(path.join(root, 'assets/default/app.ico'));
+      tray.on('click', () => restoreCompanion());
+      tray.on('right-click', () => {
+        openMenu(true).catch(() => {});
+      });
+    }
     tray.setToolTip(uiText('Capri desktop companion', languages.value.interface));
-    tray.on('click', () => restoreCompanion());
     tray.on('balloon-click', () => {
       if (!updateNoticeTag || shuttingDown || quitting) return;
       restoreCompanion();
       void settingsHost.open('updates').catch(console.error);
-    });
-    tray.on('right-click', () => {
-      openMenu(true).catch(() => {});
     });
     if (!verification)
       globalShortcut.register('CommandOrControl+Shift+Space', () => {
@@ -9887,6 +10049,7 @@ async function initializeDesktop() {
       privateMemory.close();
       brain.close();
       minimizedChip?.destroy();
+      menuBar?.destroy();
       attachmentViewer?.close();
       attachmentDrafts.clear();
       stopMusicListening();
@@ -10189,6 +10352,7 @@ async function initializeDesktop() {
             restoreCompanion();
             publishLaunchReceipt(root, launchNonce);
           }
+          menuBar?.tick();
         }, 400);
         controlTimer.unref();
         const warmRecognition =

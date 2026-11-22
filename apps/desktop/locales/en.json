@@ -2478,6 +2478,25 @@
     "No supported browser was found to open YouTube.": "No supported browser was found to open YouTube.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.",
+    "About Capri": "About Capri",
+    "Start with my Mac": "Start with my Mac",
+    "Live in the Dock": "Live in the Dock",
+    "Hide Capri": "Hide Capri",
+    "Let her sleep": "Let her sleep",
+    "Undo": "Undo",
+    "Redo": "Redo",
+    "Cut": "Cut",
+    "Copy": "Copy",
+    "Paste": "Paste",
+    "Select all": "Select all",
+    "On your Mac": "On your Mac",
+    "Menu bar icon": "Menu bar icon",
+    "Glitch bolt": "Glitch bolt",
+    "Plain bolt": "Plain bolt",
+    "Full color": "Full color",
+    "Show her mood on the menu bar icon": "Show her mood on the menu bar icon",
+    "Off: she lives in the menu bar only.": "Off: she lives in the menu bar only.",
+    "Her bolt shows when she listens, thinks, speaks or sleeps, and counts down timers.": "Her bolt shows when she listens, thinks, speaks or sleeps, and counts down timers."
   }
 }

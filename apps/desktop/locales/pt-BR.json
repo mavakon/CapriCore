@@ -2580,6 +2580,25 @@
     "Runtime prepared. Choose a converted model and test it.": "Ambiente de execução pronto. Escolha um modelo convertido e faça um teste.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "O acesso ao microfone foi negado. Permita a Capri em Ajustes do Sistema → Privacidade e Segurança → Microfone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "O treinamento de voz precisa de uma GPU NVIDIA no Windows. Ele não está disponível no macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "O instalador baixa automaticamente a voz para o idioma da conversa. No Mac, cada voz roda na CPU ou na GPU da Apple (Metal), o que for mais rápido para ela."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "O instalador baixa automaticamente a voz para o idioma da conversa. No Mac, cada voz roda na CPU ou na GPU da Apple (Metal), o que for mais rápido para ela.",
+    "About Capri": "Sobre a Capri",
+    "Start with my Mac": "Abrir com meu Mac",
+    "Live in the Dock": "Morar no Dock",
+    "Hide Capri": "Ocultar Capri",
+    "Let her sleep": "Deixar ela dormir",
+    "Undo": "Desfazer",
+    "Redo": "Refazer",
+    "Cut": "Recortar",
+    "Copy": "Copiar",
+    "Paste": "Colar",
+    "Select all": "Selecionar tudo",
+    "On your Mac": "No seu Mac",
+    "Menu bar icon": "Ícone da barra de menus",
+    "Glitch bolt": "Raio glitch",
+    "Plain bolt": "Raio simples",
+    "Full color": "Colorido",
+    "Show her mood on the menu bar icon": "Mostrar o humor dela no ícone da barra de menus",
+    "Off: she lives in the menu bar only.": "Desativado: ela mora só na barra de menus.",
+    "Her bolt shows when she listens, thinks, speaks or sleeps, and counts down timers.": "O raio mostra quando ela ouve, pensa, fala ou dorme, e faz a contagem regressiva dos timers."
   }
 }
