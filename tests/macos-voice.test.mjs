@@ -42,6 +42,12 @@ import {
 import { macPythonEnvironment } from '../packages/installer/src/macos-python.mjs';
 import { installSpeechComponents } from '../packages/installer/src/speech-components.mjs';
 import {
+  estimateInstallStorage,
+  estimateSpeechStorage,
+} from '../packages/installer/src/storage-estimate.mjs';
+import installerManifest from '../config/installer.json' with { type: 'json' };
+import macRuntime from '../config/macos-runtime.json' with { type: 'json' };
+import {
   VoiceCatalogService,
   platformVoiceDevices,
   voiceRuntime,
@@ -740,6 +746,60 @@ test('macOS speech setup installs the voice pack and components without PowerShe
   assert.ok(profile.startsWith(root + path.sep));
   assert.equal(readFileSync(path.join(profile, 'adapter.safetensors'), 'utf8'), 'adapter fixture');
   assert.equal(existsSync(path.join(root, '.runtime/git')), false);
+});
+
+test('the macOS speech budget counts PyPI Metal PyTorch and no Git', async () => {
+  const MiB = 2 ** 20;
+  const { storage, artifacts } = installerManifest;
+  const packages = ({ downloadMiB, expandedMiB }) => (downloadMiB + expandedMiB) * MiB;
+  for (const speechLanguage of ['en', 'fr']) {
+    const windows = estimateSpeechStorage({ speechLanguage }, { platform: 'win32' });
+    const mac = estimateSpeechStorage({ speechLanguage }, { platform: 'darwin' });
+    assert.equal(
+      windows.requiredBytes - mac.requiredBytes,
+      packages(storage.cudaVoice) - packages(macRuntime.storage.voice) + artifacts.git.bytes,
+    );
+  }
+  const russian = { speechLanguage: 'ru', voiceMode: 'qwen-ru' };
+  assert.equal(
+    estimateSpeechStorage(russian, { platform: 'win32' }).requiredBytes -
+      estimateSpeechStorage(russian, { platform: 'darwin' }).requiredBytes,
+    packages(storage.qwenVoice) - packages(macRuntime.storage.qwenVoice),
+  );
+  // The Windows installer's clean-install budget does not depend on the host running it.
+  const selection = {
+    recognition: true,
+    voicePack: true,
+    conversationLanguage: 'en',
+    inferenceMode: 'api',
+  };
+  assert.deepEqual(estimateInstallStorage(selection), estimateInstallStorage(selection, {}));
+  assert.equal(
+    estimateInstallStorage(selection).requiredBytes -
+      estimateSpeechStorage(
+        { recognition: 'en', speechLanguage: 'en', router: true },
+        { platform: 'win32' },
+      ).requiredBytes,
+    estimateInstallStorage({ ...selection, recognition: false, voicePack: false }).requiredBytes -
+      estimateSpeechStorage({ router: true }, { platform: 'win32' }).requiredBytes,
+  );
+  // 8 GiB free is enough for English on a Mac; the CUDA budget would refuse it.
+  const root = speechRoot();
+  const components = [];
+  const { options } = speechOptions(root, { calls: [], components });
+  const free = 8 * 1024 ** 3;
+  assert.ok(
+    estimateSpeechStorage({ speechLanguage: 'en', recognition: 'en' }, { platform: 'win32' })
+      .requiredBytes > free,
+  );
+  await installSpeechComponents(
+    { speech: 'en', recognition: 'en' },
+    { ...options, free: () => free },
+  );
+  assert.deepEqual(
+    components.map(([name]) => name),
+    ['recognition-en', 'voice'],
+  );
 });
 
 test('non-English macOS voices install dependencies first, then the language model', async () => {

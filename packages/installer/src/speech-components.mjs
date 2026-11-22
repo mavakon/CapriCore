@@ -128,7 +128,7 @@ export async function installSpeechComponents(
         speechLanguage: needVoice ? selection.speech : 'off',
         recognition: needAsr ? selection.recognition : 'off',
       },
-      { rocmVoice },
+      { rocmVoice, platform },
     );
     assertDiskSpace(root, free(root), requiredBytes);
     const env = {

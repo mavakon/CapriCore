@@ -18,6 +18,10 @@
   "python": {
     "version": "3.11.17"
   },
+  "storage": {
+    "voice": { "downloadMiB": 256, "expandedMiB": 1792 },
+    "qwenVoice": { "downloadMiB": 256, "expandedMiB": 1856 }
+  },
   "voice": {
     "torch": "2.6.0",
     "torchaudio": "2.6.0",
