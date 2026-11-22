@@ -367,12 +367,13 @@ were also using the GPU, which a Mac in normal use may do too.
 | ------- | ------------------------------------------------ | --------------- | ----- | --------- |
 | English | Chatterbox Turbo, FP32                           | 0.654           | 0.514 | CPU       |
 | French  | Chatterbox Multilingual (FP16 backbone on Metal) | 1.438           | 2.382 | Apple GPU |
-| Russian | Qwen3-TTS 1.7B Capri LoRA, FP32                  | 3.493           | 1.484 | CPU       |
+| Russian | Qwen3-TTS 0.6B, FP32                             | 3.493           | 1.484 | CPU       |
 
 The values are median RTF; a second English run gave 0.628 (GPU) and 0.488
-(CPU). The 0.6B Qwen voice was not measured and follows the Russian voice. Startup with the models on disk took 10 to 17 s, except the first Metal
-start after creating the venv, which took 52 s. A fresh English install from a
-warm uv cache took 11 s. The voice venv, the Qwen venv and uv's cache use about
+(CPU). The 1.7B Russian Capri voice (a LoRA on Qwen3-TTS) was not measured and
+follows the same rule. Startup with the models on disk took 10 to 17 s, except
+the first Metal start after creating the venv, which took 52 s. A fresh English
+install from a warm uv cache took 11 s. The voice venv, the Qwen venv and uv's cache use about
 1.0, 0.9 and 2.0 GiB. The disk check uses the sizes in `config/macos-runtime.json`
 (`storage`), measured with PyPI's PyTorch for macOS: it asks for 7.0 GiB free for
 English speech and recognition (3.8 GiB of downloads), 5.9 GiB for English speech
