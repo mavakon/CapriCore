@@ -94,6 +94,7 @@
     "format:check": "prettier --check .",
     "test:runtime": "node --test tests/runtime-foundation.test.mjs tests/desktop-boundaries.test.mjs",
     "release:installer": "node tools/release/build-installer.mjs",
+    "release:macos": "node tools/release/build-macos-app.mjs",
     "verify:installer": "node tools/verify/verify-installer.mjs"
   },
   "devDependencies": {

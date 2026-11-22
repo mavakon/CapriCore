@@ -424,6 +424,7 @@ test('update preferences persist and private-preview errors can be retried', asy
     state = path.join(plan.root, 'data/desktop');
   let fail = true;
   const settings = {
+    platform: 'win32',
     root: plan.root,
     state,
     node: process.execPath,
@@ -445,6 +446,7 @@ test('update preferences persist and private-preview errors can be retried', asy
 test('an explicit check can use a draft update channel without persisting it', async () => {
   const plan = fixture();
   const settings = {
+    platform: 'win32',
     root: plan.root,
     state: path.join(plan.root, 'data/desktop'),
     node: process.execPath,
@@ -483,6 +485,7 @@ test('a runtime upgrade downloads the full installer and admits only one install
   let launched = 0,
     stopped = 0;
   const service = new UpdateService({
+    platform: 'win32',
     root: plan.root,
     state,
     node: process.execPath,
@@ -528,6 +531,7 @@ test('source updates hand off to a windowed host before closing Capri, with pers
   let request,
     stopped = 0;
   const service = new UpdateService({
+    platform: 'win32',
     root: plan.root,
     state: path.join(plan.root, 'data/desktop'),
     node: process.execPath,
@@ -588,6 +592,7 @@ test('an update UI exiting before readiness keeps Capri open and the downloaded 
   writeFileSync(archive, 'verified fixture');
   let request;
   const service = new UpdateService({
+    platform: 'win32',
     root: plan.root,
     state: path.join(plan.root, 'data/desktop'),
     node: process.execPath,

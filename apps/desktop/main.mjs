@@ -476,7 +476,9 @@ else {
 }
 async function initializeDesktop() {
   // Running from source shows Electron's own Dock icon until Capri sets its own.
-  if (process.platform === 'darwin') app.dock?.setIcon(applicationIcon);
+  // Capri.app already shows its bundle icon.
+  if (process.platform === 'darwin' && !process.env.CAPRI_MACOS_APP)
+    app.dock?.setIcon(applicationIcon);
   installScreenPoints(screen);
   let window;
   let reportDesktopCrash;
@@ -5409,6 +5411,11 @@ async function initializeDesktop() {
 
   function queueDesktopRelaunch() {
     const launcher = path.join(root, 'Capri.exe');
+    // Capri.app starts the desktop in its own process: relaunch the app itself.
+    if (process.platform === 'darwin' && process.env.CAPRI_MACOS_APP) {
+      app.relaunch({ args: [] });
+      return;
+    }
     app.relaunch(
       existsSync(launcher)
         ? { execPath: launcher, args: [] }
@@ -7928,7 +7935,8 @@ async function initializeDesktop() {
       )
         throw new Error('Wait for the current operation to finish.');
       if (verification) throw new Error('Installing updates is disabled in desktop verification.');
-      const managed = updates.mode === 'managed';
+      // Capri.app replaces itself like a managed installation updates in place.
+      const managed = ['managed', 'macos'].includes(updates.mode);
       const fullInstaller = Boolean(updates.prepared?.executable);
       if (
         !(await confirmations.request({
@@ -9857,6 +9865,10 @@ async function initializeDesktop() {
 
   if (hasSingleInstanceLock) {
     app.on('second-instance', () => restoreCompanion());
+    // macOS reopens a running app (Dock click, Finder, `open`) without a second instance.
+    app.on('activate', (_event, hasVisibleWindows) => {
+      if (!hasVisibleWindows) restoreCompanion();
+    });
     app.on('before-quit', (event) => {
       if (quitting) return;
       void callCamera.stop();

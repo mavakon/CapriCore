@@ -69,6 +69,7 @@ function fixture({ installer = true, stage, download, launch } = {}) {
   };
   const state = { downloads: [], launches: [], shutdowns: 0, events: [] };
   const service = new UpdateService({
+    platform: 'win32',
     root: installRoot,
     state: path.join(installRoot, 'data/desktop'),
     node: process.execPath,

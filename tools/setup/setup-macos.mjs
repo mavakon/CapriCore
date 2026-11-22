@@ -54,14 +54,15 @@ export function verifyHost({
     );
 }
 
-async function sha256(file) {
+export async function sha256(file) {
   const hash = createHash('sha256');
   const { createReadStream } = await import('node:fs');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return hash.digest('hex');
 }
 
-async function download(url, target, expected) {
+/** Downloads `url` to `target` once and keeps it only if it matches its pinned SHA-256. */
+export async function download(url, target, expected) {
   if (existsSync(target) && (await sha256(target)) === expected) return target;
   mkdirSync(path.dirname(target), { recursive: true });
   const partial = target + '.partial';
@@ -72,7 +73,7 @@ async function download(url, target, expected) {
   const actual = await sha256(partial);
   if (actual !== expected) {
     rmSync(partial, { force: true });
-    throw new Error(`Downloaded llama.cpp does not match its pinned SHA-256 (got ${actual}).`);
+    throw new Error(`${path.basename(target)} does not match its pinned SHA-256 (got ${actual}).`);
   }
   renameSync(partial, target);
   return target;
