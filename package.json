@@ -83,6 +83,7 @@
     "doctor": "node packages/runtime/bin/capri.mjs doctor",
     "setup": "node packages/runtime/bin/capri.mjs setup",
     "setup:macos": "node tools/setup/setup-macos.mjs",
+    "setup:macos-speech": "node tools/setup/setup-speech-macos.mjs",
     "setup:macos-helpers": "node tools/setup/build-macos-helpers.mjs",
     "models:pull": "node packages/runtime/bin/capri.mjs models",
     "check": "node tools/checks/source.mjs",

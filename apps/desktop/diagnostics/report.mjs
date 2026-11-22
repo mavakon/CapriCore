@@ -12,6 +12,11 @@ import { diagnosticZip } from './archive.mjs';
 import { ACTIVE_AVATAR_CATALOG } from '../avatar-catalog.mjs';
 import { diagnosticState, isDiagnosticControlValue } from './state.mjs';
 import { diagnosticModelId } from '../../../packages/runtime/src/privacy-log.mjs';
+import {
+  ownedInterpreter,
+  venvPython,
+  venvPythonRelative,
+} from '../../../packages/runtime/src/host/python-env.mjs';
 
 const run = promisify(execFile),
   KB = 1024;
@@ -102,10 +107,15 @@ const failure = (error) => ({
   error: error.message,
 });
 
-export async function probeVoiceEnvironment(root) {
-  const executable = path.join(root, '.runtime/voice-training-venv/Scripts/python.exe');
+export async function probeVoiceEnvironment(root, platform = process.platform) {
+  const executable = venvPython(root, 'voice-training-venv', platform);
   try {
-    if (!(await lstat(executable)).isFile())
+    // macOS venvs link bin/python to the managed interpreter in .runtime/python.
+    if (
+      platform === 'darwin'
+        ? !ownedInterpreter(root, executable)
+        : !(await lstat(executable)).isFile()
+    )
       return { available: false, error: 'Voice Python is missing' };
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
@@ -148,8 +158,10 @@ export async function createDiagnosticReport({
     : null,
   health = async () => ({ available: false, error: 'Health check not provided' }),
   resourceProbe = async () => ({ available: false }),
+  platform = process.platform,
 }) {
   snapshot = diagnosticState(snapshot);
+  const voicePythonFile = venvPythonRelative('voice-training-venv', platform);
   const problem = validateReport(input),
     id = randomUUID(),
     createdAt = new Date().toISOString();
@@ -216,7 +228,9 @@ export async function createDiagnosticReport({
       const actual = await realpath(full);
       if (!actual.startsWith((await realpath(root)) + path.sep))
         throw new Error('Linked model source');
-      const info = await lstat(full);
+      // A macOS venv's bin/python links to the managed interpreter in .runtime/python.
+      const linked = relative === voicePythonFile && ownedInterpreter(root, full);
+      const info = await (linked ? stat : lstat)(full);
       return { file: relative, exists: info.isFile(), bytes: info.size };
     } catch (e) {
       return { file: relative, exists: false, code: e.code ?? e.name };
@@ -252,7 +266,7 @@ export async function createDiagnosticReport({
   }
   const voiceFiles = await Promise.all(
     [
-      '.runtime/voice-training-venv/Scripts/python.exe',
+      voicePythonFile,
       ...(voiceConfig.profileDir
         ? [
             'voice-profile.json',
@@ -361,10 +375,7 @@ export async function createDiagnosticReport({
     profile: pick(profile, ['engine', 'language']),
     files: voiceFiles.map((item, index) => ({
       ...item,
-      file:
-        item.file === '.runtime/voice-training-venv/Scripts/python.exe'
-          ? item.file
-          : `voice-component-${index}`,
+      file: item.file === voicePythonFile ? item.file : `voice-component-${index}`,
     })),
     adapterChecksum,
     python,

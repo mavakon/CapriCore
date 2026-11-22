@@ -384,6 +384,8 @@ export class VoiceModelPanel {
     const qwen = model?.backend === 'qwen3-tts';
     const rocmInstalled = qwen && this.value.qwenRocmReady;
     const rocmOffered = qwen && this.value.qwenRocmSupported;
+    // A Mac has no NVIDIA or AMD installer; it runs Qwen on the CPU.
+    const cudaOffered = this.value.qwenAccelerationSupported !== false;
     this.get('rocm-actions').hidden = !model?.installed || !rocmOffered || rocmInstalled;
     this.get('rocm').disabled = busy;
     this.get('rocm-help').hidden = !rocmInstalled && !rocmOffered;
@@ -392,9 +394,9 @@ export class VoiceModelPanel {
         ? 'AMD ROCm is installed. Select a Radeon GPU or Automatic in Model devices.'
         : 'AMD ROCm requires Windows 11, a supported Radeon GPU, a compatible AMD driver and 12 GiB of free disk space.',
     );
-    this.get('cuda').hidden = !russianVoiceInstalled || accelerated;
+    this.get('cuda').hidden = !russianVoiceInstalled || accelerated || !cudaOffered;
     this.get('cuda').disabled = busy;
-    this.get('cuda-help').hidden = !russianVoiceInstalled;
+    this.get('cuda-help').hidden = !russianVoiceInstalled || !cudaOffered;
     this.get('cuda-help').textContent = this.ui.text(
       accelerated
         ? 'NVIDIA acceleration is installed. Automatic uses the GPU when at least 6 GiB of VRAM are free. Choose CPU in Model devices to keep using the CPU.'

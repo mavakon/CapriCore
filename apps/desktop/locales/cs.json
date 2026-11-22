@@ -2477,7 +2477,10 @@
     "Vertical": "Svislé",
     "Horizontal": "Vodorovné",
     "I could not verify that YouTube opened. Check the page in the browser.": "Nepodařilo se ověřit, že se YouTube otevřel. Zkontroluj stránku v prohlížeči.",
-    "No supported browser was found to open YouTube.": "Nebyl nalezen podporovaný prohlížeč pro otevření YouTube."
+    "No supported browser was found to open YouTube.": "Nebyl nalezen podporovaný prohlížeč pro otevření YouTube.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Přístup k mikrofonu byl zamítnut. Povolte Capri v Nastavení systému → Soukromí a zabezpečení → Mikrofon.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Trénování hlasu vyžaduje GPU NVIDIA ve Windows. V macOS není k dispozici.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Instalace automaticky nainstaluje hlas pro jazyk konverzace. Na Macu běží každý hlas na CPU nebo na GPU Apple (Metal) – podle toho, co je pro něj rychlejší."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

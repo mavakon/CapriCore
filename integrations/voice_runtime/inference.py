@@ -4,6 +4,8 @@ import time
 import numpy as np
 import torch
 
+from .accelerator import synchronize
+
 
 class VoiceCancelled(RuntimeError):
     pass
@@ -41,8 +43,7 @@ def render(engine, text, *, device, reference, seed, max_tokens, cancelled=None)
     check_cancelled(cancelled)
     tokens = tokens[tokens < 6561].to(device)
     tokens = torch.cat((tokens, torch.tensor([S3GEN_SIL] * 3, device=device, dtype=torch.long))).unsqueeze(0)
-    if device.startswith('cuda'):
-        torch.cuda.synchronize()
+    synchronize(torch, device)
     token_done = time.perf_counter()
     if device == "cpu":
         wave, _ = engine.s3gen.inference(speech_tokens=tokens, ref_dict=reference, n_cfm_timesteps=2)

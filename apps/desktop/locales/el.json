@@ -2477,7 +2477,10 @@
     "Vertical": "Κατακόρυφη",
     "Horizontal": "Οριζόντια",
     "I could not verify that YouTube opened. Check the page in the browser.": "Δεν μπόρεσα να επιβεβαιώσω ότι άνοιξε το YouTube. Έλεγξε τη σελίδα στο πρόγραμμα περιήγησης.",
-    "No supported browser was found to open YouTube.": "Δεν βρέθηκε υποστηριζόμενο πρόγραμμα περιήγησης για το άνοιγμα του YouTube."
+    "No supported browser was found to open YouTube.": "Δεν βρέθηκε υποστηριζόμενο πρόγραμμα περιήγησης για το άνοιγμα του YouTube.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Η πρόσβαση στο μικρόφωνο απορρίφθηκε. Επιτρέψτε το Capri στις Ρυθμίσεις συστήματος → Απόρρητο και ασφάλεια → Μικρόφωνο.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Η εκπαίδευση φωνής απαιτεί GPU της NVIDIA σε Windows. Δεν είναι διαθέσιμη στο macOS.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Η εγκατάσταση ρυθμίζει αυτόματα τη φωνή για τη γλώσσα της συζήτησης. Σε Mac, κάθε φωνή εκτελείται στη CPU ή στη GPU της Apple (Metal), ανάλογα με το ποια είναι ταχύτερη για αυτήν."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

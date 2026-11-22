@@ -2477,7 +2477,10 @@
     "Vertical": "Dọc",
     "Horizontal": "Ngang",
     "I could not verify that YouTube opened. Check the page in the browser.": "Tôi không xác nhận được YouTube đã mở. Hãy kiểm tra trang trong trình duyệt.",
-    "No supported browser was found to open YouTube.": "Không tìm thấy trình duyệt được hỗ trợ để mở YouTube."
+    "No supported browser was found to open YouTube.": "Không tìm thấy trình duyệt được hỗ trợ để mở YouTube.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Quyền truy cập micrô đã bị từ chối. Hãy cho phép Capri trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Micrô.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Huấn luyện giọng nói cần GPU NVIDIA trên Windows. Tính năng này không có trên macOS.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Trình cài đặt tự động cài giọng nói cho ngôn ngữ hội thoại của bạn. Trên máy Mac, mỗi giọng nói chạy trên CPU hoặc GPU của Apple (Metal), tùy cái nào nhanh hơn cho giọng đó."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

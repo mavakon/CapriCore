@@ -40,6 +40,9 @@ jobs:
       - name: Unit tests (Windows-only failures are listed in tools/checks/known-failures.json)
         if: ${{ !cancelled() }}
         run: node tools/checks/test-known-failures.mjs
+      - name: macOS voice selection and lock checks (Python)
+        if: ${{ !cancelled() }}
+        run: python -m unittest tests.voice_macos_test tests.macos_locks_test
       - name: Source release check
         if: ${{ !cancelled() }}
         run: npm run release:check

@@ -1,5 +1,6 @@
 /** Capture is user-initiated and stays in memory from AudioWorklet to private IPC. */
 import { MICROPHONE_GAIN } from './speech-settings.mjs';
+import { microphoneDeniedMessage } from './host-platform.mjs';
 
 // Five seconds of 100ms PCM absorbs short UI/disk stalls without dropping words.
 const MAX_QUEUED_PACKETS = 50;
@@ -121,7 +122,7 @@ export class MicrophoneClient {
       this.stop();
       this.onError(
         error.name === 'NotAllowedError'
-          ? 'Microphone access was denied. Check Windows microphone access for desktop apps.'
+          ? microphoneDeniedMessage()
           : ['NotFoundError', 'NotReadableError', 'OverconstrainedError'].includes(error.name)
             ? 'The selected microphone is unavailable. Choose a device in Menu → Microphone input.'
             : 'The microphone could not start.',

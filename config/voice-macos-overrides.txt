@@ -1,0 +1,3 @@
+# Compile-time override for requirements-voice-macos.lock: Chatterbox declares Perth at a moving git ref (@master).
+# Preserve the same reviewed Perth commit as the Windows locks, as a hash-locked GitHub archive.
+resemble-perth @ https://github.com/resemble-ai/Perth/archive/ff1c8ac55a976971245cdd53c18d6131ca00d993.tar.gz

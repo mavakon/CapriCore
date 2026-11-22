@@ -22,12 +22,19 @@ from integrations.multilingual import LANGUAGES, MissingSpeechModel
 from .inference import VoiceCancelled, check_cancelled
 from .failure import inference_failure
 from .catalog import selected_voice
+from .accelerator import apple_gpu, empty_cache, is_mps, memory_bytes, mps_preflight
 
 
 def load_and_warm(config, language, cancelled=None):
     check_cancelled(cancelled)
     selected = selected_voice(language)
-    if config.get('computeDevice') != 'cpu' and (
+    if is_mps(config.get('computeDevice')):
+        # A Mac speaks on the CPU when its GPU cannot run the Metal check.
+        report = mps_preflight(torch)
+        if not report['kernelReady']:
+            print('Apple GPU unavailable for voice; using the CPU (' + report.get('error', 'Metal check failed') + ')', flush=True)
+            config['computeDevice'] = 'cpu'
+    elif config.get('computeDevice') != 'cpu' and (
         config.get('validateTurbo') or selected['backend'] != 'qwen3-tts'
     ):
         from .compatibility import require_cuda
@@ -40,7 +47,7 @@ def load_and_warm(config, language, cancelled=None):
     else:
         voice.generate(greetings.get(language, 'Hello.'), cancelled=cancelled, language=language)
     check_cancelled(cancelled)
-    torch.cuda.empty_cache()
+    empty_cache(torch)
     return voice
 
 
@@ -57,7 +64,7 @@ def serve(language='en', validate_turbo=False):
         selected = selected_voice(language)
         if selected['backend'] == 'qwen3-tts':
             config['qwenGpuAutomatic'] = os.environ.get('CAPRI_VOICE_COMPUTE_DEVICE', 'auto') == 'auto'
-            if not (getattr(torch.version, 'hip', None) or torch.version.cuda):
+            if not (getattr(torch.version, 'hip', None) or torch.version.cuda or apple_gpu(torch)):
                 config['computeDevice'] = 'cpu'
     if validate_turbo:
         if language != 'en':
@@ -149,12 +156,13 @@ def serve(language='en', validate_turbo=False):
                 return
             with state_lock:
                 failure = dict(last_failure) or None
+            allocated, reserved = memory_bytes(torch)
             self.reply(200, json.dumps(dict(
                 ready=True, protocolVersion=2, multilingual=True, engine=config["engine"], profile=voice.profile["id"],
                 tokenStreaming=False,
                 sampleRate=24000, adapterSha256=voice.profile["adapterSha256"],
-                gpuAllocatedMiB=round(torch.cuda.memory_allocated() / 1024**2, 1),
-                gpuReservedMiB=round(torch.cuda.memory_reserved() / 1024**2, 1),
+                gpuAllocatedMiB=round(allocated / 1024**2, 1),
+                gpuReservedMiB=round(reserved / 1024**2, 1),
                 warm=True, cancellation=True,
                 **voice.health(),
                 lastInferenceFailure=failure,

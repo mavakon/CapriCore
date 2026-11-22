@@ -2477,7 +2477,10 @@
     "Vertical": "నిలువు",
     "Horizontal": "అడ్డం",
     "I could not verify that YouTube opened. Check the page in the browser.": "YouTube తెరుచుకుందో లేదో నిర్ధారించలేకపోయాను. బ్రౌజర్‌లో పేజీని తనిఖీ చేయండి.",
-    "No supported browser was found to open YouTube.": "YouTube తెరవడానికి మద్దతు ఉన్న బ్రౌజర్ ఏదీ కనబడలేదు."
+    "No supported browser was found to open YouTube.": "YouTube తెరవడానికి మద్దతు ఉన్న బ్రౌజర్ ఏదీ కనబడలేదు.",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "మైక్రోఫోన్ యాక్సెస్ నిరాకరించబడింది. System Settings → Privacy & Security → Microphone లో Capri కి అనుమతి ఇవ్వండి.",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "వాయిస్ శిక్షణకు Windows లో NVIDIA GPU అవసరం. ఇది macOS లో అందుబాటులో లేదు.",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "సెటప్ మీ సంభాషణ భాష కోసం వాయిస్‌ను స్వయంచాలకంగా ఇన్‌స్టాల్ చేస్తుంది. Mac లో ప్రతి వాయిస్ CPU లేదా Apple GPU (Metal) లో, ఆ వాయిస్‌కు ఏది వేగంగా ఉంటే దానిపై నడుస్తుంది."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

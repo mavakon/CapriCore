@@ -2471,7 +2471,10 @@
     "Vertical": "ਲੰਬਕਾਰੀ",
     "Horizontal": "ਖਿਤਿਜੀ",
     "I could not verify that YouTube opened. Check the page in the browser.": "ਮੈਂ ਪੁਸ਼ਟੀ ਨਹੀਂ ਕਰ ਸਕੀ ਕਿ YouTube ਖੁੱਲ੍ਹਿਆ ਹੈ। ਬ੍ਰਾਊਜ਼ਰ ਵਿੱਚ ਪੰਨਾ ਵੇਖੋ।",
-    "No supported browser was found to open YouTube.": "YouTube ਖੋਲ੍ਹਣ ਲਈ ਕੋਈ ਸਮਰਥਿਤ ਬ੍ਰਾਊਜ਼ਰ ਨਹੀਂ ਮਿਲਿਆ।"
+    "No supported browser was found to open YouTube.": "YouTube ਖੋਲ੍ਹਣ ਲਈ ਕੋਈ ਸਮਰਥਿਤ ਬ੍ਰਾਊਜ਼ਰ ਨਹੀਂ ਮਿਲਿਆ।",
+    "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "ਮਾਈਕ੍ਰੋਫ਼ੋਨ ਪਹੁੰਚ ਤੋਂ ਇਨਕਾਰ ਕੀਤਾ ਗਿਆ। System Settings → Privacy & Security → Microphone ਵਿੱਚ Capri ਨੂੰ ਇਜਾਜ਼ਤ ਦਿਓ।",
+    "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "ਆਵਾਜ਼ ਸਿਖਲਾਈ ਲਈ Windows ਉੱਤੇ NVIDIA GPU ਦੀ ਲੋੜ ਹੈ। ਇਹ macOS ਉੱਤੇ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।",
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "ਸੈੱਟਅੱਪ ਤੁਹਾਡੀ ਗੱਲਬਾਤ ਦੀ ਭਾਸ਼ਾ ਲਈ ਆਵਾਜ਼ ਆਪਣੇ ਆਪ ਇੰਸਟਾਲ ਕਰਦਾ ਹੈ। Mac ਉੱਤੇ ਹਰ ਆਵਾਜ਼ CPU ਜਾਂ Apple GPU (Metal) ਉੱਤੇ ਚੱਲਦੀ ਹੈ, ਜੋ ਵੀ ਉਸ ਆਵਾਜ਼ ਲਈ ਤੇਜ਼ ਹੋਵੇ।"
   },
   "id": "pa",
   "name": "Punjabi",

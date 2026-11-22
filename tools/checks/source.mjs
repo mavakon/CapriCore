@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { root, nodePath, findExecutable } from '../../packages/runtime/src/index.mjs';
+import { venvPython } from '../../packages/runtime/src/host/python-env.mjs';
 const files = [];
 function walk(directory) {
   for (const item of readdirSync(directory, { withFileTypes: true })) {
@@ -25,7 +26,7 @@ for (const file of files) {
   } else if (file.endsWith('.json')) JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 }
 const python = findExecutable('python', {
-  extra: [path.join(root, '.runtime/asr-venv/Scripts/python.exe')],
+  extra: [venvPython(root, 'asr-venv')],
 });
 if (python) {
   const code =

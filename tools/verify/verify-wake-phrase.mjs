@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempDisposableSync, mkdtempSync, writeFileSync, existsSyn
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
 import { root, runtime, initialize, environment } from '../../packages/runtime/src/index.mjs';
+import { venvPython } from '../../packages/runtime/src/host/python-env.mjs';
 import { saveSettings, settingsView } from './settings-view.mjs';
 import {
   startCompanionVoice,
@@ -39,7 +40,7 @@ writeFileSync(path.join(folder, 'synthetic-prefix.f32'), Buffer.from(await respo
 const fakeAudio = path.join(folder, 'fake-input.wav');
 const fixture = JSON.parse(
   execFileSync(
-    path.join(root, '.runtime/asr-venv/Scripts/python.exe'),
+    venvPython(root, 'asr-venv'),
     [
       '-c',
       `
