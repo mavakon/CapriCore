@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundledLlamaServer, bundledNode } from './platform.mjs';
 
 export const root = path.resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
 export const paths = Object.freeze({
@@ -43,13 +44,13 @@ export function resolveExecutables(
       throw new Error(variable + ' must point to an existing executable.');
     return env[variable];
   };
-  const bundledNode = path.join(paths.cache, `node-v${settings.nodeVersion}-win-x64/node.exe`);
+  const privateNode = bundledNode(paths.cache, settings.nodeVersion, platform);
   const node = explicit(
     'CAPRI_NODE_PATH',
     findExecutable('node', {
       env,
       platform,
-      extra: [/^node(?:\.exe)?$/i.test(path.basename(executable)) ? executable : null, bundledNode],
+      extra: [/^node(?:\.exe)?$/i.test(path.basename(executable)) ? executable : null, privateNode],
     }),
   );
   const llama = explicit(
@@ -57,7 +58,7 @@ export function resolveExecutables(
     findExecutable('llama-server', {
       env,
       platform,
-      extra: [path.join(paths.cache, `llama-${settings.llamaVersion}-vulkan/llama-server.exe`)],
+      extra: [bundledLlamaServer(paths.cache, settings.llamaVersion, platform)],
     }),
   );
   return Object.freeze({

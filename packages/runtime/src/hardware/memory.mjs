@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { freemem, totalmem } from 'node:os';
+import { totalmem } from 'node:os';
+import { readAvailableMemoryBytes } from './available-memory.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -91,7 +92,8 @@ async function readGpuMemory() {
 export class MemorySampler {
   constructor({
     readGpu = readGpuMemory,
-    ram = () => memoryUsage(totalmem(), freemem()),
+    // macOS: free pages alone leave out reclaimable cache and read as nearly full.
+    ram = async () => memoryUsage(totalmem(), await readAvailableMemoryBytes()),
     now = Date.now,
   } = {}) {
     Object.assign(this, { readGpu, ram, now });
@@ -122,7 +124,7 @@ export class MemorySampler {
     return {
       sampledAt: this.now(),
       gpuSampledAt: this.gpuSampledAt ?? null,
-      ram: this.ram(),
+      ram: await this.ram(),
       gpus: this.gpus.map((gpu) => ({ ...gpu })),
     };
   }

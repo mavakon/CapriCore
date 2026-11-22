@@ -339,7 +339,7 @@ import {
 import { DIMMING_DEFAULTS, validateDimming } from './renderer/dimming-settings.mjs';
 import { RequestRouter } from './request-router.mjs';
 import { randomUUID } from 'node:crypto';
-import { freemem } from 'node:os';
+import { availableMemoryBytes } from '../../packages/runtime/src/hardware/available-memory.mjs';
 import { Preferences } from './preferences.mjs';
 import { INFERENCE_STARTUP_DEFAULTS, inferenceStartupSettings } from './inference-startup.mjs';
 import { VOICE_EFFECT_DEFAULTS, validateVoiceEffects } from './renderer/voice-effects-settings.mjs';
@@ -465,6 +465,8 @@ else {
     app.on('browser-window-created', (_event, window) => window.setIcon(applicationIcon));
 }
 async function initializeDesktop() {
+  // Running from source shows Electron's own Dock icon until Capri sets its own.
+  if (process.platform === 'darwin') app.dock?.setIcon(applicationIcon);
   let window;
   let reportDesktopCrash;
   let gpuProcessFailures = 0;
@@ -1257,7 +1259,7 @@ async function initializeDesktop() {
       ? { config: { schemaVersion: 1, enabled: false, timeoutMs: 150 } }
       : {}),
   });
-  const responseTiming = responsiveness({ ...settings, availableRamBytes: freemem() });
+  const responseTiming = responsiveness({ ...settings, availableRamBytes: availableMemoryBytes() });
   const emulatedX64 = windowsX64Emulation();
   const internetSearch = new WebSearch();
   const coding = new CodingService({
@@ -9777,7 +9779,12 @@ async function initializeDesktop() {
     activeMask = maskFor(avatar.currentId);
     pointer.start();
 
-    tray = new Tray(path.join(root, 'assets/default/app.ico'));
+    // macOS cannot decode .ico; the menu bar takes an 18 pt image.
+    tray = new Tray(
+      process.platform === 'darwin'
+        ? nativeImage.createFromPath(applicationIcon).resize({ height: 18 })
+        : path.join(root, 'assets/default/app.ico'),
+    );
     tray.setToolTip(uiText('Capri desktop companion', languages.value.interface));
     tray.on('click', () => restoreCompanion());
     tray.on('balloon-click', () => {

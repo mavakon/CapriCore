@@ -31,6 +31,19 @@ function systemPowerShell() {
     : 'powershell.exe';
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** `ps -o lstart` in UTC, such as "Sat Nov 21 23:27:59 2026", as digits-only epoch seconds. */
+export function parseDarwinStartTime(text) {
+  const match =
+    /^[A-Z][a-z]{2}\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})$/.exec(
+      String(text).trim(),
+    );
+  const month = match ? MONTHS.indexOf(match[1]) : -1;
+  if (month < 0) return null;
+  const [, , day, hour, minute, second, year] = match.map(Number);
+  return String(Date.UTC(year, month, day, hour, minute, second) / 1000);
+}
+
 export function processStartedAt(pid) {
   if (!Number.isInteger(pid) || pid < 1) return null;
   try {
@@ -45,6 +58,17 @@ export function processStartedAt(pid) {
         ],
         { windowsHide: true, encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] },
       ).trim();
+    if (process.platform === 'darwin')
+      // macOS has no /proc. The launch time from ps identifies the process
+      // together with its PID; UTC and the C locale keep the text stable.
+      return parseDarwinStartTime(
+        execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
+          encoding: 'utf8',
+          timeout: 10000,
+          env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', TZ: 'UTC' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }),
+      );
     const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
     return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
   } catch {
@@ -102,6 +126,7 @@ export function launch(
     cleanEnv = false,
     cwd = root,
     probeStartedAt = processStartedAt,
+    stdio = 'ignore',
   } = {},
 ) {
   const existing = managedProcess(name);
@@ -165,7 +190,7 @@ export function launch(
     // The GUI must survive a short-lived launcher. Console services inherit
     // the windowless GUI instead of requesting a new console process group.
     detached: process.platform !== 'win32',
-    stdio: 'ignore',
+    stdio,
   });
   child.once('error', (error) => record('stderr', { event: 'spawn-failed', code: error.code }));
   child.once('exit', (code) =>

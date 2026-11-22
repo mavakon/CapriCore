@@ -1,4 +1,5 @@
-import { availableParallelism, totalmem, freemem, cpus, platform, arch, release } from 'node:os';
+import { availableParallelism, totalmem, cpus, platform, arch, release } from 'node:os';
+import { availableMemoryBytes } from './available-memory.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -216,7 +217,7 @@ export async function probeHardware({
     cpu: cpus()[0]?.model ?? 'Unknown',
     cpuThreads: availableParallelism(),
     ramBytes: totalmem(),
-    availableRamBytes: freemem(),
+    availableRamBytes: availableMemoryBytes({ platform: hostPlatform }),
     gpus: [],
     warnings: [],
   };
@@ -302,9 +303,52 @@ export async function probeHardware({
       return [];
     }
   };
+  if (report.platform === 'darwin') {
+    report.gpus = await appleSiliconGpus(report, { runCommand, env });
+    if (report.arch !== 'arm64')
+      report.warnings.push('macOS support is qualified for Apple silicon (arm64) only.');
+    return report;
+  }
   const [nvidiaGpus, windowsGpus] = await Promise.all([queryNvidia(), queryWindows()]);
   report.gpus = mergeGpuInventory(windowsGpus, nvidiaGpus);
   if (report.platform !== 'win32' || report.arch !== 'x64')
-    report.warnings.push('The desktop is currently qualified for Windows x64 only.');
+    report.warnings.push(
+      'The desktop is currently qualified for Windows x64 and macOS on Apple silicon only.',
+    );
   return report;
+}
+
+/**
+ * Apple silicon shares one memory pool between CPU and GPU. Metal limits the
+ * GPU working set to roughly two thirds of RAM (three quarters above 36 GiB),
+ * which is what llama.cpp can offload to; it is not additional memory.
+ */
+export function appleMetalWorkingSetMiB(ramBytes) {
+  if (!Number.isFinite(ramBytes) || ramBytes <= 0) return null;
+  const ramMiB = ramBytes / 1024 ** 2;
+  return Math.floor(ramMiB * (ramMiB > 36 * 1024 ? 0.75 : 2 / 3));
+}
+
+async function appleSiliconGpus(report, { runCommand, env }) {
+  if (report.arch !== 'arm64') return [];
+  let chip = '';
+  try {
+    const { stdout } = await runCommand('/usr/sbin/sysctl', ['-n', 'machdep.cpu.brand_string'], {
+      ...probeOptions,
+      env: { PATH: '/usr/sbin:/usr/bin:/bin', LC_ALL: 'C', HOME: env.HOME ?? '' },
+    });
+    chip = String(stdout).trim().slice(0, 128);
+  } catch {
+    report.warnings.push('The Apple silicon chip name is unavailable.');
+  }
+  return [
+    {
+      name: chip ? `${chip} GPU` : 'Apple silicon GPU',
+      vendor: 'apple',
+      vramMiB: appleMetalWorkingSetMiB(report.ramBytes),
+      memoryKind: 'unified',
+      freeVramMiB: null,
+      cudaCandidate: false,
+    },
+  ];
 }

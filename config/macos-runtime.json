@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "platform": "darwin-arm64",
+  "llama": {
+    "version": "b12317",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12317/llama-b12317-bin-macos-arm64.tar.gz",
+    "sha256": "ac453373fa09110df9edab032a00936dd834f85421c5333cb3a1ff9cbdc410ea",
+    "bytes": 16896114,
+    "archiveRoot": "llama-b12317"
+  }
+}

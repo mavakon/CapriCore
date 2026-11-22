@@ -69,10 +69,15 @@ export function recommendProfile(hardware) {
     };
   const gpus = hardware.gpus ?? [];
   // Shared/unknown memory and multiple cards never get counted as one large GPU.
+  // Apple silicon's unified memory counts once: its Metal working set decides
+  // the GPU tier, while the RAM requirement stays the full CPU-path figure.
+  const unified = gpus.some((gpu) => gpu.memoryKind === 'unified');
   const vram = Math.max(
     0,
     ...gpus
-      .filter((gpu) => gpu.memoryKind === 'dedicated' && Number.isFinite(gpu.vramMiB))
+      .filter(
+        (gpu) => ['dedicated', 'unified'].includes(gpu.memoryKind) && Number.isFinite(gpu.vramMiB),
+      )
       .map((gpu) => gpu.vramMiB / 1024),
   );
   const id =
@@ -95,10 +100,14 @@ export function recommendProfile(hardware) {
     },
     reasons: [
       `Detected ${ram.toFixed(1)} GiB RAM.`,
-      vram
-        ? `Largest confirmed dedicated GPU: ${vram.toFixed(1)} GiB.`
-        : 'Dedicated VRAM is unknown; a conservative text profile is selected.',
-      'Ollama decides actual text acceleration. CUDA speech must be installed and checked separately.',
+      unified
+        ? `Apple silicon unified memory; Metal can use about ${vram.toFixed(1)} GiB of it.`
+        : vram
+          ? `Largest confirmed dedicated GPU: ${vram.toFixed(1)} GiB.`
+          : 'Dedicated VRAM is unknown; a conservative text profile is selected.',
+      unified
+        ? 'llama.cpp accelerates text with Metal.'
+        : 'Ollama decides actual text acceleration. CUDA speech must be installed and checked separately.',
     ],
   };
 }
