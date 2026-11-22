@@ -47,6 +47,7 @@ function fixture({ experimental = false, ...overrides } = {}) {
   const events = [],
     calls = { credentials: 0, releases: 0, downloads: 0 };
   const options = {
+    platform: 'win32',
     root: installRoot,
     state,
     node: process.execPath,

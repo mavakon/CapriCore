@@ -1,0 +1,188 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Capri Setup</title>
+    <link rel="stylesheet" href="setup.css" />
+    <script src="setup.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <img class="mark" src="mark.svg" alt="" />
+      <div>
+        <h1>Capri</h1>
+        <p class="subtitle" id="subtitle">Setup</p>
+      </div>
+    </header>
+
+    <main>
+      <!-- Shown while the launcher checks, copies or moves the app. -->
+      <section class="page" data-page="busy">
+        <h2 id="busy-title">Getting Capri ready…</h2>
+        <p id="busy-detail" class="muted"></p>
+        <progress id="busy-progress"></progress>
+        <p id="busy-count" class="muted small"></p>
+      </section>
+
+      <section class="page" data-page="move">
+        <h2>Move Capri to your Applications folder</h2>
+        <p>
+          Capri is running from the disk image or from a temporary location. Copy it to Applications
+          so it keeps working after you eject the disk image.
+        </p>
+        <p class="muted small" id="move-path"></p>
+        <div class="actions">
+          <button type="button" data-action="quit">Quit</button>
+          <button type="button" class="primary" data-action="move" id="move-button">
+            Move to Applications
+          </button>
+        </div>
+      </section>
+
+      <section class="page" data-page="welcome">
+        <div class="welcome">
+          <img class="portrait" src="avatar.png" alt="" />
+          <div>
+            <h2>Welcome to Capri</h2>
+            <p>
+              Capri is a desktop companion that runs its language model on this Mac. Setup downloads
+              the model you choose and a small memory model, then opens Capri.
+            </p>
+            <p class="muted small">
+              Conversations, memory and models stay in
+              <span class="path">~/Library/Application Support/Capri</span>.
+            </p>
+          </div>
+        </div>
+        <details class="license">
+          <summary>GNU General Public License, version 3</summary>
+          <pre id="license-text"></pre>
+        </details>
+        <label class="check">
+          <input type="checkbox" id="accept-license" />
+          I accept the license terms.
+        </label>
+        <div class="actions">
+          <button type="button" data-action="quit">Quit</button>
+          <button type="button" class="primary" data-next="model" id="welcome-next" disabled>
+            Continue
+          </button>
+        </div>
+      </section>
+
+      <section class="page" data-page="model">
+        <h2>Choose Capri's language model</h2>
+        <p class="muted small" id="hardware"></p>
+        <fieldset class="sources">
+          <label class="choice">
+            <input type="radio" name="source" value="local" checked />
+            <span>
+              <strong>On this Mac</strong>
+              <span class="muted">Private and offline after the download. Uses Metal.</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="source" value="huggingface" />
+            <span>
+              <strong>A model from Hugging Face</strong>
+              <span class="muted">Pick a GGUF model in Capri after setup.</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="source" value="api" />
+            <span>
+              <strong>An online provider</strong>
+              <span class="muted"
+                >Capri asks for the provider and its API key when it opens. Messages are sent to
+                that provider.</span
+              >
+            </span>
+          </label>
+        </fieldset>
+        <div id="model-list" class="models" role="radiogroup" aria-label="Language model"></div>
+        <p class="muted small" id="model-note"></p>
+        <div class="actions">
+          <button type="button" data-next="welcome">Back</button>
+          <button type="button" class="primary" data-next="language" id="model-next">
+            Continue
+          </button>
+        </div>
+      </section>
+
+      <section class="page" data-page="language">
+        <h2>Languages</h2>
+        <label class="field">
+          <span>Capri's menus and settings</span>
+          <select id="interface-language"></select>
+        </label>
+        <label class="field">
+          <span>Language Capri talks in</span>
+          <select id="conversation-language"></select>
+        </label>
+        <p class="muted small">You can change both later in Capri's settings.</p>
+        <div class="actions">
+          <button type="button" data-next="model">Back</button>
+          <button type="button" class="primary" data-next="review">Continue</button>
+        </div>
+      </section>
+
+      <section class="page" data-page="review">
+        <h2>Ready to set up</h2>
+        <dl class="summary" id="summary"></dl>
+        <label class="check">
+          <input type="checkbox" id="accept-downloads" />
+          <span id="downloads-label">Download the selected models from Hugging Face.</span>
+        </label>
+        <p class="error" id="review-error" hidden></p>
+        <div class="actions">
+          <button type="button" data-next="language">Back</button>
+          <button type="button" class="primary" data-action="run" id="run-button" disabled>
+            Set Up Capri
+          </button>
+        </div>
+      </section>
+
+      <section class="page" data-page="running">
+        <h2 id="running-title">Setting up Capri…</h2>
+        <ol class="stages" id="stages"></ol>
+        <progress id="running-progress" max="1" value="0"></progress>
+        <p class="muted small" id="transfer"></p>
+        <details class="log">
+          <summary>Details</summary>
+          <pre id="log"></pre>
+        </details>
+        <div class="actions">
+          <button type="button" data-action="cancel" id="cancel-button">Stop</button>
+        </div>
+      </section>
+
+      <section class="page" data-page="complete">
+        <h2>Capri is ready</h2>
+        <p id="complete-detail">Capri opens in its own window and in the menu bar.</p>
+        <div class="actions">
+          <button type="button" class="primary" data-action="finish">Open Capri</button>
+        </div>
+      </section>
+
+      <section class="page" data-page="failed">
+        <h2 id="failed-title">Setup could not finish</h2>
+        <p class="error" id="failed-detail"></p>
+        <p class="muted small">
+          Details are in <span class="path">~/Library/Logs/Capri</span> and in the
+          <span class="path">logs</span> folder of Capri's data.
+        </p>
+        <div class="actions">
+          <button type="button" data-action="quit">Quit</button>
+          <button type="button" data-action="open-logs">Show Logs</button>
+          <button type="button" class="primary" data-action="retry">Try Again</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

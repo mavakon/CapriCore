@@ -1,0 +1,110 @@
+{
+  "description": "Unit tests known to fail on a platform, with the reason. tools/checks/test-known-failures.mjs fails CI on any failure not listed here and warns when a listed test passes. Listed tests still run, and must pass, in the Windows job. Keys are process.platform values.",
+  "darwin": [
+    {
+      "file": "tests/coding-agent-workflow.test.mjs",
+      "test": "coding uses a ranged read to edit large CRLF source, creates nested tests and fixes a failing test",
+      "reason": "Coding mode accepts only Windows .exe editors and project tasks; macOS editors and tasks are not ported yet."
+    },
+    {
+      "file": "tests/coding-agent-workflow.test.mjs",
+      "test": "initial model request has the active editor location when the bridge is enabled",
+      "reason": "Coding mode accepts only Windows .exe editors and project tasks; macOS editors and tasks are not ported yet."
+    },
+    {
+      "file": "tests/coding-editor-bridge.test.mjs",
+      "test": "coding mode uses live buffer versions, rejects dirty/missing bridges and never silently writes disk",
+      "reason": "Coding mode accepts only Windows .exe editors and project tasks; macOS editors and tasks are not ported yet."
+    },
+    {
+      "file": "tests/coding-mode.test.mjs",
+      "test": "native coding executes an explicitly approved real Node test without credential environment",
+      "reason": "Coding mode accepts only Windows .exe editors and project tasks; macOS editors and tasks are not ported yet."
+    },
+    {
+      "file": "tests/coding-mode.test.mjs",
+      "test": "coding agent completes a read/edit/test chain and uses no desktop actions",
+      "reason": "Coding mode accepts only Windows .exe editors and project tasks; macOS editors and tasks are not ported yet."
+    },
+    {
+      "file": "tests/coding-mode.test.mjs",
+      "test": "monitor reports saved paths, skips ignores and stops on revoking the project",
+      "reason": "Coding mode is not ported to macOS. This test is timing-dependent there: FSEvents sometimes reports the .gitignore written just before watching starts."
+    },
+    {
+      "file": "tests/computer-agent-replanning.test.mjs",
+      "test": "a requested taskbar switch rebinds to the verified foreground before the next click",
+      "reason": "Computer control is Windows-only (C# helper). This taskbar fixture also fails on Linux; not investigated."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "desktop readiness requires the actual runtime, not just its npm package",
+      "reason": "Windows installer fixture (electron.exe layout). On macOS electronBundleReady checks Electron.app instead."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "installation rejects an insufficient disk probe before writing or running dependencies",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "a missing included reference is rejected before installing dependencies",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "upgrade applies the newly selected model before downloading it and preserves ports and context",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "a native ONNX loader failure leaves an upgraded installation usable without the optional classifier",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "interrupted upgrade model download restores the previously selected model",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "installer applies CPU before preparing models and retains the voice device",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "installer does not overwrite a device in API mode and restores it on cancellation",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "upgrade persists Russian conversation and interface selections while keeping automatic recognition",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "interrupted upgrade leaves the previous conversation and interface languages intact",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/installer.test.mjs",
+      "test": "an upgrade can retain a custom conversation language from the app",
+      "reason": "Windows installer: it refuses other hosts (\"supports Windows x64\"). The macOS app will be packaged separately."
+    },
+    {
+      "file": "tests/updater-electron-runtime.test.mjs",
+      "test": "an intact desktop is retained without a download and receives a valid executable entry",
+      "reason": "Windows updater: its pinned Electron archive is the Windows build. The updater does not apply on macOS (docs/macos.md)."
+    },
+    {
+      "file": "tests/updater-electron-runtime.test.mjs",
+      "test": "a package-only npm install is repaired with the pinned archive before restart",
+      "reason": "Windows updater: its pinned Electron archive is the Windows build. The updater does not apply on macOS (docs/macos.md)."
+    },
+    {
+      "file": "tests/updater-electron-runtime.test.mjs",
+      "test": "updating the npm package also replaces the previous Electron executable",
+      "reason": "Windows updater: its pinned Electron archive is the Windows build. The updater does not apply on macOS (docs/macos.md)."
+    }
+  ]
+}

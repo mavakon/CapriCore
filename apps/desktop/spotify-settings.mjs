@@ -8,8 +8,17 @@ import {
   saveSpotifyAccess,
 } from '../../integrations/spotify/configuration.mjs';
 export class SpotifySettings {
-  constructor({ root, rt, agentId, node, readStatus, emit = () => {}, execute = runCommand }) {
-    Object.assign(this, { root, rt, agentId, node, readStatus, emit, execute });
+  constructor({
+    root,
+    rt,
+    agentId,
+    node,
+    readStatus,
+    emit = () => {},
+    execute = runCommand,
+    platform = process.platform,
+  }) {
+    Object.assign(this, { root, rt, agentId, node, readStatus, emit, execute, platform });
     this.phase = 'idle';
     this.error = null;
     this.controller = null;
@@ -24,7 +33,7 @@ export class SpotifySettings {
     }
     return {
       enabled,
-      prepared: spotifyBridgeReady(this.root),
+      prepared: spotifyBridgeReady(this.root, { platform: this.platform }),
       phase: this.phase,
       error: this.error,
       connection: this.connection,
@@ -49,7 +58,7 @@ export class SpotifySettings {
     this.publish();
     let change;
     try {
-      if (enabled && !spotifyBridgeReady(this.root)) {
+      if (enabled && !spotifyBridgeReady(this.root, { platform: this.platform })) {
         await this.execute(
           this.node,
           [path.join(this.root, 'integrations/spotify/provision.mjs')],
@@ -58,7 +67,9 @@ export class SpotifySettings {
             env: {
               ...Object.fromEntries(
                 Object.entries(process.env).filter(([key]) =>
-                  /^(SystemRoot|WINDIR|PATH|APPDATA|LOCALAPPDATA|USERPROFILE|TEMP|TMP)$/i.test(key),
+                  /^(SystemRoot|WINDIR|PATH|APPDATA|LOCALAPPDATA|USERPROFILE|TEMP|TMP|HOME|TMPDIR|DEVELOPER_DIR)$/i.test(
+                    key,
+                  ),
                 ),
               ),
               CAPRI_NODE_PATH: this.node,
@@ -68,7 +79,8 @@ export class SpotifySettings {
             timeoutMs: 120000,
           },
         );
-        if (!spotifyBridgeReady(this.root)) throw new Error('Spotify setup could not be verified.');
+        if (!spotifyBridgeReady(this.root, { platform: this.platform }))
+          throw new Error('Spotify setup could not be verified.');
       }
       signal.throwIfAborted();
       this.phase = 'applying';

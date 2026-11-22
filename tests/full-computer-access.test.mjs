@@ -22,6 +22,7 @@ test('full access requires the host-enforced three-second confirmation, persists
     now: () => now,
   });
   const full = new FullComputerAccess({
+    platform: 'win32',
     file,
     discover: async () => ['C:\\', 'D:\\'],
     confirm: (value) => confirmations.request(value),
@@ -38,6 +39,7 @@ test('full access requires the host-enforced three-second confirmation, persists
   assert.equal(full.scopes().length, 2);
   assert.match(full.scopes()[0].id, /^[a-f0-9-]{36}$/);
   const restarted = new FullComputerAccess({
+    platform: 'win32',
     file,
     discover: async () => assert.fail(),
     confirm: () => assert.fail(),
@@ -49,6 +51,7 @@ test('full access requires the host-enforced three-second confirmation, persists
 
 test('cancelled or superseded full grants cannot resurrect during drive discovery', async () => {
   const full = new FullComputerAccess({
+    platform: 'win32',
     file: path.join(folder(), 'access.json'),
     discover: async () => assert.fail(),
     confirm: async () => false,

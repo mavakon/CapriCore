@@ -259,7 +259,9 @@ import {
   systemPreferences,
 } from 'electron';
 import { requestMicrophoneAccess } from './macos-media-access.mjs';
+import { execFile } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -382,6 +384,13 @@ import { avatarTapsSleeping, isSleepCommand, SleepService } from './sleep-servic
 import { ScreenshotFiles } from './screenshot-files.mjs';
 import { ScreenClipFrames } from './screen-clip-frames.mjs';
 import { ScreenFrameWorker } from './screen-frame-worker.mjs';
+import { installScreenPoints } from './main/screen-points.mjs';
+import { MacosComputerPermissions } from './main/macos-permissions.mjs';
+import { MacosWindowFollower } from './main/macos-window-follow.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 import { ControlOverlay } from './main/control-overlay.mjs';
 import { ControlWindowLayer } from './main/control-window-layer.mjs';
 import { AvatarDetach, avatarDragCanTeleport } from './main/avatar-detach.mjs';
@@ -468,7 +477,10 @@ else {
 }
 async function initializeDesktop() {
   // Running from source shows Electron's own Dock icon until Capri sets its own.
-  if (process.platform === 'darwin') app.dock?.setIcon(applicationIcon);
+  // Capri.app already shows its bundle icon.
+  if (process.platform === 'darwin' && !process.env.CAPRI_MACOS_APP)
+    app.dock?.setIcon(applicationIcon);
+  installScreenPoints(screen);
   let window;
   let reportDesktopCrash;
   let gpuProcessFailures = 0;
@@ -641,6 +653,9 @@ async function initializeDesktop() {
           void teleportToCursor(screen.screenToDipPoint(point)).catch(() => {});
         })
       : null;
+  // macOS: the Swift helper follows a perched window and the avatar drag release.
+  const macosWindowFollower =
+    !verification && process.platform === 'darwin' ? new MacosWindowFollower(root) : null;
   const installedAvatar = loadInstalledAvatar(root);
   const { catalog } = installedAvatar;
   const startupIntroPack = catalog.animated ? loadStartupIntro(root) : null;
@@ -1142,7 +1157,10 @@ async function initializeDesktop() {
   );
   const fullComputerAccess = new FullComputerAccess({
     file: path.join(state, 'full-computer-access.json'),
-    discover: async () => (await callApplicationBridge(root, { action: 'catalog_drives' })).drives,
+    discover: async () =>
+      process.platform === 'darwin'
+        ? ['/']
+        : (await callApplicationBridge(root, { action: 'catalog_drives' })).drives,
     confirm: (options) => confirmations.request(options),
     onChange: (value) => {
       if (!value.enabled) void computerControl.stop();
@@ -4124,6 +4142,7 @@ async function initializeDesktop() {
     avatarClickReactions?.cancel();
     avatarDetach?.reset();
     desktopTeleportMenu?.hide();
+    macosWindowFollower?.close();
     settingsHost?.hide();
     void computerControl.stop();
     processLoad.stop();
@@ -4337,7 +4356,7 @@ async function initializeDesktop() {
   }
 
   async function avatarWindow(selector = {}) {
-    if (process.platform !== 'win32') return null;
+    if (!['win32', 'darwin'].includes(process.platform)) return null;
     const settingsView = settingsHost?.window;
     const settingsId = settingsView?.isVisible()
       ? settingsAvatarWindowId(settingsView, settingsUrl)
@@ -4563,7 +4582,9 @@ async function initializeDesktop() {
       return perchAtEdge();
     if (reserved) return false;
     const native = screen.dipToScreenPoint(point);
-    const nativeRadius = Math.min(400, Math.round(radius * (display.scaleFactor || 1)));
+    // macOS window geometry is in points, the same units as Electron's DIP.
+    const nativeScale = process.platform === 'darwin' ? 1 : display.scaleFactor || 1;
+    const nativeRadius = Math.min(400, Math.round(radius * nativeScale));
     const target = await avatarWindow({
       nearX: String(native.x),
       nearY: String(native.y),
@@ -4750,7 +4771,9 @@ async function initializeDesktop() {
             onChange: changed,
           });
           attempt.localTracking = Boolean(localWatch);
-          attempt.stopTracking = localWatch ?? desktopTeleportMenu?.watchWindow(record, changed);
+          attempt.stopTracking =
+            localWatch ??
+            (desktopTeleportMenu ?? macosWindowFollower)?.watchWindow(record, changed);
         }
         return true;
       }
@@ -5017,7 +5040,9 @@ async function initializeDesktop() {
     if (await playAmbientSurface(now)) return;
     if (
       perch?.stopTracking &&
-      (perch.localTracking || (perch.lastNativeUpdate && desktopTeleportMenu?.session?.ready))
+      (perch.localTracking ||
+        (perch.lastNativeUpdate &&
+          (desktopTeleportMenu?.session?.ready || macosWindowFollower?.ready)))
     ) {
       await followPerch(perch);
       return;
@@ -5390,6 +5415,11 @@ async function initializeDesktop() {
 
   function queueDesktopRelaunch() {
     const launcher = path.join(root, 'Capri.exe');
+    // Capri.app starts the desktop in its own process: relaunch the app itself.
+    if (process.platform === 'darwin' && process.env.CAPRI_MACOS_APP) {
+      app.relaunch({ args: [] });
+      return;
+    }
     app.relaunch(
       existsSync(launcher)
         ? { execPath: launcher, args: [] }
@@ -5834,8 +5864,21 @@ async function initializeDesktop() {
     translate: (text) => uiText(text, languages.value.interface),
   });
   let controlBorder = null;
-  const nativeEscape = process.platform === 'win32' ? new NativeEscapeStop({ root }) : null;
+  const nativeEscape = ['win32', 'darwin'].includes(process.platform)
+    ? new NativeEscapeStop({ root })
+    : null;
+  const macosPermissions = new MacosComputerPermissions({
+    systemPreferences,
+    // The helper asks macOS for Screen Recording on Capri's behalf (one prompt).
+    requestScreenRecording: () =>
+      promisify(execFile)(
+        macosHelperExecutable(root),
+        ['permissions', 'request', 'screen-recording'],
+        { env: macosHelperEnvironment(root), timeout: 10000, maxBuffer: 4096 },
+      ),
+  });
   const computerControl = new ComputerControl({
+    permissions: () => macosPermissions.check(),
     allowed: () => fullComputerAccess.enabled && applicationAccess.enabled,
     visionAvailable: () => screenVisionAvailable,
     canStart: () =>
@@ -5843,14 +5886,15 @@ async function initializeDesktop() {
         (workflowTurn || (chat.active && !chat.active.controller.signal.aborted)) && !shuttingDown,
       ),
     currentTurn: () => workflowTurn ?? chat.active?.id ?? null,
-    bridge: (command, options) =>
-      desktopCatalog.bridge(
-        root,
+    bridge: (command, options) => {
+      let request =
         command.action === 'computer_state'
           ? { ...command, ignoreProcessId: String(process.pid) }
-          : command,
-        options,
-      ),
+          : command;
+      if (process.platform === 'darwin' && controlBorder && request.action?.startsWith('computer_'))
+        request = { ...request, passThroughWindowIds: controlBorder.passThroughWindowIds() };
+      return desktopCatalog.bridge(root, request, options);
+    },
     pointerDuration: () =>
       (settingsPreview.computerAppearance ?? computerAppearance.value).pointerDuration,
     applicationAdapter: new ResolveAdapter({
@@ -7895,7 +7939,8 @@ async function initializeDesktop() {
       )
         throw new Error('Wait for the current operation to finish.');
       if (verification) throw new Error('Installing updates is disabled in desktop verification.');
-      const managed = updates.mode === 'managed';
+      // Capri.app replaces itself like a managed installation updates in place.
+      const managed = ['managed', 'macos'].includes(updates.mode);
       const fullInstaller = Boolean(updates.prepared?.executable);
       if (
         !(await confirmations.request({
@@ -9470,6 +9515,7 @@ async function initializeDesktop() {
 
   function createWindow() {
     desktopTeleportMenu?.hide();
+    macosWindowFollower?.close();
     stopReplyWindowResize();
     const settings = liveCompanionSettings();
     activeWindowLayout = settings.windowLayout;
@@ -9542,9 +9588,11 @@ async function initializeDesktop() {
       onRaised: () => avatarComposer?.raise(),
       onPointer: syncAvatarComposer,
       watchRelease: (overlay, callback) =>
-        desktopTeleportMenu?.watchRelease(overlay.getNativeWindowHandle(), (point) =>
-          callback(screen.screenToDipPoint(point)),
-        ),
+        macosWindowFollower
+          ? macosWindowFollower.watchRelease(overlay, callback)
+          : desktopTeleportMenu?.watchRelease(overlay.getNativeWindowHandle(), (point) =>
+              callback(screen.screenToDipPoint(point)),
+            ),
       onPhase: (phase) => {
         detachedReplyHovered = false;
         if (phase === 'detached')
@@ -9823,6 +9871,10 @@ async function initializeDesktop() {
 
   if (hasSingleInstanceLock) {
     app.on('second-instance', () => restoreCompanion());
+    // macOS reopens a running app (Dock click, Finder, `open`) without a second instance.
+    app.on('activate', (_event, hasVisibleWindows) => {
+      if (!hasVisibleWindows) restoreCompanion();
+    });
     app.on('before-quit', (event) => {
       if (quitting) return;
       void callCamera.stop();
@@ -9845,6 +9897,7 @@ async function initializeDesktop() {
       }
       resetCallAudio();
       desktopTeleportMenu?.hide();
+      macosWindowFollower?.close();
       avatarClickReactions.cancel();
       avatarDetach?.reset();
       avatarComposer?.destroy();

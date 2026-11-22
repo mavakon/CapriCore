@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -14,6 +14,20 @@ import { desktopPlatform, electronExecutable } from './host/platform.mjs';
 
 const run = promisify(execFile);
 const STARTUP_CHECK_MS = 3000;
+
+export const MACOS_BUNDLE_IDENTIFIER = 'com.capri-core.desktop';
+/** True for a folder that Capri.app installed and runs (macOS only). */
+export function installedByMacApp(folder, platform = process.platform) {
+  if (platform !== 'darwin') return false;
+  try {
+    const receipt = JSON.parse(
+      readFileSync(path.join(folder, '.runtime/macos/installed.json'), 'utf8'),
+    );
+    return receipt?.schemaVersion === 1 && /^[a-f0-9]{64}$/.test(receipt.fingerprint ?? '');
+  } catch {
+    return false;
+  }
+}
 
 export async function superviseDesktopExit(start, reportCrash) {
   const { promise: exit, resolve: exited } = Promise.withResolvers();
@@ -49,6 +63,11 @@ export async function startDesktop({ wait = false } = {}) {
       JSON.stringify({ show: true, launchNonce: process.env.CAPRI_LAUNCH_NONCE ?? null }),
     );
     return { ...existing, alreadyRunning: true };
+  }
+  if (installedByMacApp(root)) {
+    // Capri.app owns this installation and runs the desktop in its own process.
+    await run('/usr/bin/open', ['-b', MACOS_BUNDLE_IDENTIFIER]);
+    return { opened: MACOS_BUNDLE_IDENTIFIER };
   }
   const electronPackage = path.join(root, 'node_modules/electron');
   if (!electronBundleReady(electronPackage))

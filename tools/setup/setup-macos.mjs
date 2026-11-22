@@ -34,6 +34,7 @@ import {
   llamaBundleDirectory,
 } from '../../packages/runtime/src/host/platform.mjs';
 import { electronBundleReady } from '../../packages/runtime/src/host/electron-bundle.mjs';
+import { buildMacosHelper } from '../../packages/runtime/src/host/macos-helper.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const spec = JSON.parse(readFileSync(path.join(root, 'config/macos-runtime.json'), 'utf8')).llama;
@@ -53,14 +54,15 @@ export function verifyHost({
     );
 }
 
-async function sha256(file) {
+export async function sha256(file) {
   const hash = createHash('sha256');
   const { createReadStream } = await import('node:fs');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return hash.digest('hex');
 }
 
-async function download(url, target, expected) {
+/** Downloads `url` to `target` once and keeps it only if it matches its pinned SHA-256. */
+export async function download(url, target, expected) {
   if (existsSync(target) && (await sha256(target)) === expected) return target;
   mkdirSync(path.dirname(target), { recursive: true });
   const partial = target + '.partial';
@@ -71,7 +73,7 @@ async function download(url, target, expected) {
   const actual = await sha256(partial);
   if (actual !== expected) {
     rmSync(partial, { force: true });
-    throw new Error(`Downloaded llama.cpp does not match its pinned SHA-256 (got ${actual}).`);
+    throw new Error(`${path.basename(target)} does not match its pinned SHA-256 (got ${actual}).`);
   }
   renameSync(partial, target);
   return target;
@@ -125,9 +127,12 @@ export async function setupMacos() {
     log(`installed llama.cpp ${spec.version} (Metal) in ${path.relative(root, final)}.`);
   }
   try {
+    // The first launch of a freshly downloaded binary waits for macOS to scan
+    // it and its libraries and for Metal to initialize; 15 s was not enough on
+    // a cold GitHub runner.
     const devices = execFileSync(executable, ['--list-devices'], {
       encoding: 'utf8',
-      timeout: 15000,
+      timeout: 90000,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const metal = devices
@@ -140,6 +145,8 @@ export async function setupMacos() {
         : 'no Metal device reported; text runs on the CPU.',
     );
   } catch (error) {
+    if (error.code === 'ETIMEDOUT')
+      throw new Error('llama-server did not list its devices within 90 s.');
     throw new Error(`llama-server could not start: ${error.stderr || error.message}`);
   }
   const electron = path.join(root, 'node_modules/electron');
@@ -157,6 +164,16 @@ export async function setupMacos() {
     if (!electronBundleReady(electron)) throw new Error('The Electron download is incomplete.');
     log('Electron is ready.');
   } else log('Electron is ready.');
+  // Screen and computer features need the Swift helper; chat works without it.
+  try {
+    await buildMacosHelper(root, { log });
+    log('macOS helper is ready.');
+  } catch (error) {
+    log(
+      'the macOS helper was not built, so screen, computer control, Spotify and window awareness stay off: ' +
+        (error.stderr?.trim().split('\n').at(-1) || error.message),
+    );
+  }
   if (!existsSync(path.join(root, 'config/core.local.json')))
     log('next: npm run setup, then npm run models:pull, then npm run desktop.');
   else log('next: npm run models:pull (if not done), then npm run desktop.');

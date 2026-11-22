@@ -233,6 +233,7 @@ function fixture(overrides = {}) {
     emit: (event) => dialogs.push(event),
   });
   const access = new FullComputerAccess({
+    platform: 'win32',
     file: path.join(
       mkdtempSync(path.join(os.tmpdir(), 'capri-computer-chat-test-')),
       'access.json',

@@ -2,6 +2,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { prepareNativeHelper } from './native-helper.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 
 export const WINDOWS_AUDIO_SAMPLE_RATE = 16000;
 export const WINDOWS_AUDIO_PACKET_BYTES =
@@ -14,20 +18,40 @@ const captureFailure = 'The selected audio source disconnected.';
 export const validWindowsAudioEndpointId = (id) =>
   typeof id === 'string' && id.trim().length > 0 && id.length <= 512 && !/[\x00-\x1f\x7f]/.test(id);
 
-/** Enumerate active Windows endpoints and capture one explicit route in a private child process. */
+/**
+ * Enumerate active audio endpoints and capture one explicit route in a private
+ * child process: WASAPI on Windows, Core Audio (microphones and a system-audio
+ * tap) through the Capri macOS helper on macOS. Both speak the same protocol.
+ */
 export class WindowsAudioEndpoints {
   constructor({
     root,
     platform = process.platform,
     prepare = prepareNativeHelper,
+    macosHelper = macosHelperExecutable,
     run = promisify(execFile),
     spawnProcess = spawn,
   }) {
-    Object.assign(this, { root, platform, prepare, run, spawnProcess });
+    Object.assign(this, { root, platform, prepare, macosHelper, run, spawnProcess });
+  }
+
+  get supported() {
+    return this.platform === 'win32' || this.platform === 'darwin';
+  }
+
+  /** The helper and its fixed arguments for one command. */
+  async command(args) {
+    if (this.platform === 'darwin')
+      return [
+        this.macosHelper(this.root, { platform: this.platform }),
+        ['audio-endpoints', ...args],
+        { env: macosHelperEnvironment(this.root) },
+      ];
+    return [await this.prepare(this.root, 'audio-endpoints'), args, {}];
   }
 
   list() {
-    if (this.platform !== 'win32') return Promise.resolve([]);
+    if (!this.supported) return Promise.resolve([]);
     return (this.listing ??= this.readList().finally(() => {
       this.listing = null;
     }));
@@ -35,8 +59,9 @@ export class WindowsAudioEndpoints {
 
   async readList() {
     try {
-      const executable = await this.prepare(this.root, 'audio-endpoints');
-      const { stdout } = await this.run(executable, ['list'], {
+      const [executable, args, options] = await this.command(['list']);
+      const { stdout } = await this.run(executable, args, {
+        ...options,
         windowsHide: true,
         timeout: 5000,
         maxBuffer: 256 * 1024,
@@ -66,18 +91,15 @@ export class WindowsAudioEndpoints {
   }
 
   async capture(id, { onPacket, onError = () => {}, signal } = {}) {
-    if (
-      this.platform !== 'win32' ||
-      !validWindowsAudioEndpointId(id) ||
-      typeof onPacket !== 'function'
-    )
+    if (!this.supported || !validWindowsAudioEndpointId(id) || typeof onPacket !== 'function')
       throw new Error(startFailure);
     signal?.throwIfAborted();
     let child;
     try {
-      const executable = await this.prepare(this.root, 'audio-endpoints');
+      const [executable, args, options] = await this.command(['capture', id]);
       signal?.throwIfAborted();
-      child = this.spawnProcess(executable, ['capture', id], {
+      child = this.spawnProcess(executable, args, {
+        ...options,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'ignore'],
       });

@@ -10,6 +10,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/assets/build-app-i
 
 `assets/default/icon-source.png` supplies native window and notification icons. `assets/default/app.ico` contains 16, 24, 32, 48, 64, 128 and 256 pixel frames, and supplies the tray and compiled Windows launchers. Setup, the installed app, uninstall and private Electron identity must be rebuilt from those assets. Existing desktop identity receipts include the ICO hash, so normal startup regenerates an outdated private executable.
 
+The macOS app icon is `assets/default/macos/AppIcon-1024.png`: the same bolt on a rounded square that follows the macOS icon grid. Redraw it with `python3 tools/assets/build-macos-icon.py` (Pillow); `npm run release:macos` turns it into `Capri.icns`.
+
 The floating restore chip and renderer favicons use the allowlisted SVG. Character portraits, animation frames and headpat artwork are separate assets.
 
 Remote Discord Rich Presence artwork is stored in Discord's Developer Portal, not in the application package. Upload the generated PNG there to change an existing remote image asset; local icon replacement does not modify that account setting.

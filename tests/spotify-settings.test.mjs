@@ -37,7 +37,16 @@ function fixture() {
     writeFileSync(path.join(build, artifact), 'never executed');
     writeJsonAtomic(path.join(build, 'build.json'), { sourceSha256: hash, artifact });
   };
-  return { root: folder, rt, agentId: 'capri', node: process.execPath, config, prepare };
+  // The fixture prepares the Windows bridge; macOS readiness is covered in macos-helpers tests.
+  return {
+    root: folder,
+    rt,
+    agentId: 'capri',
+    node: process.execPath,
+    config,
+    prepare,
+    platform: 'win32',
+  };
 }
 test('Spotify permission changes preserve other tools, model, plugins and reasoning', () => {
   const f = fixture(),

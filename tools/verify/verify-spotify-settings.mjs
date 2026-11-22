@@ -82,6 +82,8 @@ try {
         agentId: 'capri',
         node: process.execPath,
         emit,
+        // The fixture prepares the Windows bridge; macOS readiness is covered in macos-helpers tests.
+        platform: 'win32',
         execute: async () => {
           steps.push('prepare');
           const sourceSha256 = spotifySourceHash(fixture),
