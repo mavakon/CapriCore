@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 export const REPOSITORY = 'CapriChooms/CapriCore';
 export const EXPERIMENTAL_REPOSITORY = 'CapriChooms/Capri';
+/** Capri.app builds for macOS come from the macOS port's own releases. */
+export const MACOS_REPOSITORY = 'mavakon/CapriCore';
 export const LEGACY_PREVIEW_TAG = 'v1.1.0';
 export const LEGACY_PREVIEW_VERSION = 'v1.1.0-experimental.1';
 
@@ -43,9 +45,23 @@ export function compareVersions(a, b) {
   }
   return 0;
 }
+const ASSET_LIMITS = Object.freeze({
+  source: 512 * 1024 ** 2,
+  installer: 512 * 1024 ** 2,
+  // The disk image carries Electron, Node.js, llama.cpp and every npm dependency.
+  macos: 2 * 1024 ** 3,
+});
+/** File name of a release asset: source update, Windows installer or macOS disk image. */
+export function releaseAssetName(tag, kind = 'source') {
+  const { version, pre } = parseVersion(tag);
+  const full = pre.length ? `${version}-${pre.join('.')}` : version;
+  if (kind === 'source') return `Capri-${version}-source.zip`;
+  if (kind === 'installer') return `CapriSetup-${version}.exe`;
+  if (kind === 'macos') return `Capri-${full}-macos-arm64.dmg`;
+  throw new Error('Unknown release asset kind');
+}
 export function releaseAsset(release, kind = 'source') {
-  const { version } = parseVersion(release.tag_name);
-  const name = kind === 'source' ? `Capri-${version}-source.zip` : `CapriSetup-${version}.exe`;
+  const name = releaseAssetName(release.tag_name, kind);
   const asset = release.assets?.find((item) => item.name === name && item.state === 'uploaded');
   if (
     !asset ||
@@ -53,7 +69,7 @@ export function releaseAsset(release, kind = 'source') {
     asset.id <= 0 ||
     !Number.isSafeInteger(asset.size) ||
     asset.size <= 0 ||
-    asset.size > 512 * 1024 ** 2 ||
+    asset.size > ASSET_LIMITS[kind] ||
     !/^sha256:[a-f0-9]{64}$/.test(asset.digest ?? '')
   )
     return null;

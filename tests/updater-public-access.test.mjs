@@ -83,6 +83,7 @@ test('an unavailable GitHub release feed falls back to GitLab for checking, hist
     return Response.json(files);
   };
   const service = new UpdateService({
+    platform: 'win32',
     root: installRoot,
     state: path.join(installRoot, 'state'),
     node: process.execPath,
@@ -175,6 +176,7 @@ test('release history exposes notes and safely separates older versions from in-
   let credential = null;
   const calls = [];
   const service = new UpdateService({
+    platform: 'win32',
     root: base,
     state: base,
     credential: async () => credential,
@@ -439,6 +441,7 @@ test('startup and manual checks gate private releases on experimental access and
       );
       const calls = [];
       const service = new UpdateService({
+        platform: 'win32',
         root: installRoot,
         state,
         node: process.execPath,
@@ -514,6 +517,7 @@ test('manual preview checks distinguish missing access, temporary failure and a 
         '{"schemaVersion":1,"settings":{"experimental":true}}',
       );
       const service = new UpdateService({
+        platform: 'win32',
         root: base,
         state: base,
         credential: async () => credential,
@@ -555,6 +559,7 @@ test('explicit checks and downloads ignore unreadable saved credentials without 
   let checks = 0,
     downloads = 0;
   const service = new UpdateService({
+    platform: 'win32',
     root: installRoot,
     state: path.join(installRoot, 'data/desktop'),
     node: process.execPath,

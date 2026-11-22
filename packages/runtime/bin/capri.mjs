@@ -94,9 +94,11 @@ try {
         ? 'Capri stopped unexpectedly and showed the diagnostic prompt.'
         : marker?.alreadyRunning
           ? 'Showing the running Capri.'
-          : marker
-            ? `Capri companion started (process ${marker.pid}).`
-            : 'Capri closed.',
+          : marker?.opened
+            ? 'Opened the Capri app.'
+            : marker
+              ? `Capri companion started (process ${marker.pid}).`
+              : 'Capri closed.',
     );
   } else if (command === 'models') {
     process.argv.splice(2, 1);
