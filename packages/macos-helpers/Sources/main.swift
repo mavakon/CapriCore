@@ -14,6 +14,7 @@ private func helperMain() -> Int32 {
   case "screen-worker": return runScreenWorker()
   case "screen-capture": return runScreenCapture(rest)
   case "window-events": return runWindowEvents()
+  case "window-follow": return runWindowFollow()
   case "spotify": return runSpotify()
   case "audio-endpoints": return runAudioEndpoints(rest)
   case "gpu": return runGpu()

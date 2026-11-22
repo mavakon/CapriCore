@@ -104,6 +104,76 @@ test('desktop actions answer in the Windows bridge format', { skip }, async () =
   }
 });
 
+test('avatar window lookup and following read geometry only', { skip }, async () => {
+  const invalid = await json([], {
+    input: '{"action":"avatar_window","nearX":"1","nearY":"1","nearRadius":"9999"}\n',
+  });
+  assert.equal(invalid.value.ok, false);
+  const found = await json([], {
+    input: JSON.stringify({ action: 'avatar_window', ignoreProcessId: String(process.pid) }) + '\n',
+  });
+  assert.equal(found.code, 0, found.text);
+  assert.equal(found.value.ok, true);
+  const child = spawn(helper, ['window-follow'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: macosHelperEnvironment(root),
+  });
+  const exited = new Promise((resolve) => child.on('close', resolve));
+  const lines = [];
+  let pending = '';
+  const waiters = [];
+  child.stdout.on('data', (chunk) => {
+    pending += chunk;
+    const parts = pending.split('\n');
+    pending = parts.pop();
+    lines.push(...parts);
+    for (const waiter of waiters.splice(0)) waiter();
+  });
+  const next = async (pattern) => {
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const index = lines.findIndex((line) => pattern.test(line));
+      if (index >= 0) return lines.splice(index, 1)[0];
+      if (Date.now() > deadline) throw new Error('window-follow did not answer ' + pattern);
+      await new Promise((resolve) => {
+        waiters.push(resolve);
+        setTimeout(resolve, 200);
+      });
+    }
+  };
+  assert.equal(await next(/^ready$/), 'ready');
+  child.stdin.write('follow 2 4000000000 1 1\n');
+  assert.equal(await next(/^anchor 2 /), 'anchor 2 closed');
+  if (found.value.windowId) {
+    const { windowId, processId, startedAtTicks, width, height } = found.value;
+    assert.match(windowId, /^[1-9]\d*$/);
+    assert.notEqual(processId, String(process.pid));
+    assert.ok(width >= 160 && height >= 100);
+    child.stdin.write(`follow 3 ${windowId} ${processId} ${startedAtTicks}\n`);
+    // The window can move or close between the two reads; its identity holds.
+    assert.match(
+      await next(/^anchor 3 /),
+      /^anchor 3 (visible -?\d+ -?\d+ [1-9]\d* [1-9]\d*|hidden|closed)$/,
+    );
+    const exact = await json([], {
+      input:
+        JSON.stringify({ action: 'avatar_window', windowId, processId, startedAtTicks }) + '\n',
+    });
+    assert.ok([windowId, null].includes(exact.value.windowId));
+    const stale = await json([], {
+      input:
+        JSON.stringify({ action: 'avatar_window', windowId, processId, startedAtTicks: '1' }) +
+        '\n',
+    });
+    assert.equal(stale.value.windowId, null, 'a reused window number is not followed');
+  }
+  child.stdin.write('follow 0 0 0 0\n77 9\n0 0\n');
+  child.stdin.end();
+  const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+  assert.equal(await exited, 0);
+  clearTimeout(timer);
+});
+
 test('window events start, report readiness and stop when stdin closes', { skip }, async () => {
   const child = spawn(helper, ['window-events'], {
     stdio: ['pipe', 'pipe', 'pipe'],

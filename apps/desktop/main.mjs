@@ -385,6 +385,7 @@ import { ScreenClipFrames } from './screen-clip-frames.mjs';
 import { ScreenFrameWorker } from './screen-frame-worker.mjs';
 import { installScreenPoints } from './main/screen-points.mjs';
 import { MacosComputerPermissions } from './main/macos-permissions.mjs';
+import { MacosWindowFollower } from './main/macos-window-follow.mjs';
 import {
   macosHelperEnvironment,
   macosHelperExecutable,
@@ -649,6 +650,9 @@ async function initializeDesktop() {
           void teleportToCursor(screen.screenToDipPoint(point)).catch(() => {});
         })
       : null;
+  // macOS: the Swift helper follows a perched window and the avatar drag release.
+  const macosWindowFollower =
+    !verification && process.platform === 'darwin' ? new MacosWindowFollower(root) : null;
   const installedAvatar = loadInstalledAvatar(root);
   const { catalog } = installedAvatar;
   const startupIntroPack = catalog.animated ? loadStartupIntro(root) : null;
@@ -4132,6 +4136,7 @@ async function initializeDesktop() {
     avatarClickReactions?.cancel();
     avatarDetach?.reset();
     desktopTeleportMenu?.hide();
+    macosWindowFollower?.close();
     settingsHost?.hide();
     void computerControl.stop();
     processLoad.stop();
@@ -4345,7 +4350,7 @@ async function initializeDesktop() {
   }
 
   async function avatarWindow(selector = {}) {
-    if (process.platform !== 'win32') return null;
+    if (!['win32', 'darwin'].includes(process.platform)) return null;
     const settingsView = settingsHost?.window;
     const settingsId = settingsView?.isVisible()
       ? settingsAvatarWindowId(settingsView, settingsUrl)
@@ -4571,7 +4576,9 @@ async function initializeDesktop() {
       return perchAtEdge();
     if (reserved) return false;
     const native = screen.dipToScreenPoint(point);
-    const nativeRadius = Math.min(400, Math.round(radius * (display.scaleFactor || 1)));
+    // macOS window geometry is in points, the same units as Electron's DIP.
+    const nativeScale = process.platform === 'darwin' ? 1 : display.scaleFactor || 1;
+    const nativeRadius = Math.min(400, Math.round(radius * nativeScale));
     const target = await avatarWindow({
       nearX: String(native.x),
       nearY: String(native.y),
@@ -4758,7 +4765,9 @@ async function initializeDesktop() {
             onChange: changed,
           });
           attempt.localTracking = Boolean(localWatch);
-          attempt.stopTracking = localWatch ?? desktopTeleportMenu?.watchWindow(record, changed);
+          attempt.stopTracking =
+            localWatch ??
+            (desktopTeleportMenu ?? macosWindowFollower)?.watchWindow(record, changed);
         }
         return true;
       }
@@ -5025,7 +5034,9 @@ async function initializeDesktop() {
     if (await playAmbientSurface(now)) return;
     if (
       perch?.stopTracking &&
-      (perch.localTracking || (perch.lastNativeUpdate && desktopTeleportMenu?.session?.ready))
+      (perch.localTracking ||
+        (perch.lastNativeUpdate &&
+          (desktopTeleportMenu?.session?.ready || macosWindowFollower?.ready)))
     ) {
       await followPerch(perch);
       return;
@@ -9490,6 +9501,7 @@ async function initializeDesktop() {
 
   function createWindow() {
     desktopTeleportMenu?.hide();
+    macosWindowFollower?.close();
     stopReplyWindowResize();
     const settings = liveCompanionSettings();
     activeWindowLayout = settings.windowLayout;
@@ -9562,9 +9574,11 @@ async function initializeDesktop() {
       onRaised: () => avatarComposer?.raise(),
       onPointer: syncAvatarComposer,
       watchRelease: (overlay, callback) =>
-        desktopTeleportMenu?.watchRelease(overlay.getNativeWindowHandle(), (point) =>
-          callback(screen.screenToDipPoint(point)),
-        ),
+        macosWindowFollower
+          ? macosWindowFollower.watchRelease(overlay, callback)
+          : desktopTeleportMenu?.watchRelease(overlay.getNativeWindowHandle(), (point) =>
+              callback(screen.screenToDipPoint(point)),
+            ),
       onPhase: (phase) => {
         detachedReplyHovered = false;
         if (phase === 'detached')
@@ -9865,6 +9879,7 @@ async function initializeDesktop() {
       }
       resetCallAudio();
       desktopTeleportMenu?.hide();
+      macosWindowFollower?.close();
       avatarClickReactions.cancel();
       avatarDetach?.reset();
       avatarComposer?.destroy();

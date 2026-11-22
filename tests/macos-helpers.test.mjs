@@ -44,6 +44,7 @@ import {
 } from '../apps/desktop/main/macos-permissions.mjs';
 import { installScreenPoints } from '../apps/desktop/main/screen-points.mjs';
 import { ControlOverlay } from '../apps/desktop/main/control-overlay.mjs';
+import { MacosWindowFollower } from '../apps/desktop/main/macos-window-follow.mjs';
 
 const parent = path.resolve('.runtime/test-data');
 mkdirSync(parent, { recursive: true });
@@ -617,4 +618,67 @@ test('the control indicator names its own click-through windows for macOS hit te
     { isDestroyed: () => false },
   ];
   assert.deepEqual(overlay.passThroughWindowIds(), ['4567']);
+});
+
+test('a perched window and the drag release are followed through the helper protocol', async () => {
+  const root = checkout();
+  const children = [];
+  let launch;
+  const follower = new MacosWindowFollower(root, {
+    executable: (folder) => macosHelperExecutable(folder, darwin),
+    spawnImpl: (...args) => {
+      launch = args;
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+  });
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  assert.equal(follower.ready, false);
+  assert.equal(typeof follower.watchWindow({ windowId: 'x' }, () => assert.fail()), 'function');
+  assert.equal(children.length, 0, 'an invalid perch starts nothing');
+  const changes = [];
+  const record = { windowId: '812', processId: '4242', startedAtTicks: '638000000000000000' };
+  const stopWindow = follower.watchWindow(record, (value) => changes.push(value));
+  assert.equal(children.length, 1);
+  assert.deepEqual(launch[1], ['window-follow']);
+  assert.deepEqual(Object.keys(launch[2].env).sort(), ['HOME', 'LANG', 'PATH', 'TMPDIR']);
+  const child = children[0];
+  assert.equal(child.written, '', 'nothing is sent before the helper is ready');
+  const releases = [];
+  const overlay = { getMediaSourceId: () => 'window:77:0' };
+  const stopRelease = follower.watchRelease(overlay, (point) => releases.push(point));
+  child.stdout.write('ready\n');
+  await tick();
+  assert.equal(follower.ready, true);
+  assert.deepEqual(child.written.trim().split('\n'), [
+    '77 2',
+    'follow 1 812 4242 638000000000000000',
+  ]);
+  child.stdout.write(
+    'anchor 1 visible -1440 25 900 600\nanchor 9 visible 0 0 10 10\nrelease 2 -12 40\nrelease 5 1 1\nanchor 1 hidden\n',
+  );
+  await tick();
+  assert.deepEqual(changes, [
+    { state: 'visible', x: -1440, y: 25, width: 900, height: 600 },
+    { state: 'hidden' },
+  ]);
+  assert.deepEqual(releases, [{ x: -12, y: 40 }]);
+  child.written = '';
+  stopWindow();
+  stopRelease();
+  assert.deepEqual(child.written.trim().split('\n'), ['follow 0 0 0 0', '0 0']);
+  assert.equal(typeof follower.watchRelease({ getMediaSourceId: () => 'screen:0:0' }), 'function');
+  let ended = false;
+  child.stdin.on('finish', () => (ended = true));
+  follower.close();
+  await tick();
+  assert.equal(ended, true, 'closing ends the helper through stdin');
+  assert.equal(follower.ready, false);
+  const missing = new MacosWindowFollower(checkout({ built: false }), {
+    executable: (folder) => macosHelperExecutable(folder, darwin),
+    spawnImpl: () => assert.fail('an unverified helper is never started'),
+  });
+  assert.equal(typeof missing.watchWindow(record, () => {}), 'function');
+  assert.equal(missing.ready, false);
 });

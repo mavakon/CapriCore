@@ -24,7 +24,7 @@ func computerProcessAllowed(_ pid: pid_t, ignored: pid_t = 0) -> Bool {
   return allowed
 }
 
-private let systemWindowOwners: Set<String> = [
+let systemWindowOwners: Set<String> = [
   "Dock", "Window Server", "WindowManager", "Control Center", "SystemUIServer",
   "Notification Center", "Spotlight", "loginwindow", "screencaptureui",
 ]
@@ -1037,6 +1037,7 @@ func runDesktopActions() -> Int32 {
     case "computer_click": result = try pointer(q, click: true)
     case "computer_type": result = try typeText(q)
     case "macos_permissions": result = permissionStatus()
+    case "avatar_window": result = try avatarWindow(q)
     default:
       throw HelperError(
         "This application action is not available on macOS yet. Open the app yourself, then ask again.",
