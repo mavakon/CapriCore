@@ -30,6 +30,24 @@ def is_mps(device):
     return str(device).split(':', 1)[0] == MPS
 
 
+# Automatic speech on Apple silicon, measured on an M4 Pro (docs/macos.md):
+# English Turbo and Qwen speak faster on the CPU, and Multilingual's FP16
+# backbone on the Apple GPU. CPU speech also leaves the GPU to the local LLM.
+APPLE_CPU_ENGINES = frozenset({'turbo', 'qwen3-tts', 'qwen3-tts-ru-lora'})
+
+
+def engine_config(config, engine):
+    """The voice settings one engine runs with; only Automatic on a Mac differs.
+
+    An explicit Apple GPU choice (CAPRI_VOICE_COMPUTE_DEVICE=mps) still runs
+    every engine on Metal, and an explicit CPU choice every engine on the CPU.
+    """
+    if (config.get('automaticDevice') and is_mps(config.get('computeDevice'))
+            and engine in APPLE_CPU_ENGINES):
+        return {**config, 'computeDevice': 'cpu', 'cpuReason': 'apple-cpu-faster'}
+    return config
+
+
 def is_cuda(device):
     return str(device).split(':', 1)[0] == 'cuda'
 

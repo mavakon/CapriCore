@@ -95,7 +95,7 @@ class QwenVoice:
         self.config, self.cancelled, self.last_metrics = config, None, {}
         self.recent_speech = None
         self.decoder_device = compute
-        self.decoder_reason = reason
+        self.decoder_reason = config.get('cpuReason', reason)
         self.precision = 'bfloat16-talker/float32-decoder' if half else 'float32'
         self.started, self.frames = 0, 0
         self.decode_started, self.decode_seconds = 0, 0

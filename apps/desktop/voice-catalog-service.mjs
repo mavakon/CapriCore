@@ -185,7 +185,7 @@ export function voiceRuntimes(root, model, platform = process.platform) {
     ...(model.id === RUSSIAN_QWEN_ID ? [qwenGpuRuntime(root, 'cuda', platform)] : []),
     qwenGpuRuntime(root, 'rocm', platform),
     {
-      // On macOS this one runtime also uses the Apple GPU when PyTorch can.
+      // On macOS Automatic runs Qwen here on the CPU, faster than the Apple GPU.
       backend: 'cpu',
       python: venvPython(root, 'qwen-tts-venv', platform),
       env: voicePlatformEnvironment(platform),
@@ -205,13 +205,14 @@ export function voiceRuntime(root, model, deviceKey = 'auto', platform = process
 }
 
 /**
- * Devices a catalog voice can use on this host. A Mac runs every PyTorch voice
- * (Chatterbox and Qwen) on its Apple GPU through Metal or on the CPU; the CUDA
- * and ROCm builds are Windows-only. Breeze stays listed as Windows-only.
+ * Devices a catalog voice uses on this host. On a Mac, Automatic runs English
+ * Turbo and Qwen on the CPU, which measured faster than the Apple GPU, and
+ * Multilingual on the Apple GPU through Metal with the CPU as its fallback
+ * (docs/macos.md). CUDA and ROCm builds and Breeze are Windows-only.
  */
 export function platformVoiceDevices(model, platform = process.platform) {
   if (platform !== 'darwin' || model.backend === 'breeze-tts') return model.devices;
-  return ['cpu', 'mps'];
+  return model.backend === 'chatterbox-multilingual-v3' ? ['cpu', 'mps'] : ['cpu'];
 }
 
 export function voicePython(root, model, platform = process.platform) {
@@ -312,9 +313,8 @@ export class VoiceCatalogService {
       russianQwenCudaReady: Boolean(qwenGpuRuntime(this.root, 'cuda', this.platform)),
       qwenRocmReady: Boolean(qwenGpuRuntime(this.root, 'rocm', this.platform)),
       qwenRocmSupported: this.qwenRocmSupported === true,
-      // NVIDIA and AMD Qwen installers are Windows-only; a Mac uses its Apple GPU.
+      // NVIDIA and AMD Qwen installers are Windows-only; a Mac runs Qwen on its CPU.
       qwenAccelerationSupported: this.platform !== 'darwin',
-      appleGpu: this.platform === 'darwin' && this.arch === 'arm64',
       breezeSupported: this.platform === 'win32' && this.arch === 'x64',
       breezeVoice: breeze ? { name: breeze.name } : null,
       models: this.models.map((model) => ({
@@ -406,7 +406,7 @@ export class VoiceCatalogService {
       throw new Error('Use Install and enable in Languages for the Chatterbox voice models.');
     if (this.platform === 'darwin' && (cuda === true || rocm === true))
       throw new Error(
-        'NVIDIA and AMD acceleration are not available on macOS. Qwen uses the Apple GPU.',
+        'NVIDIA and AMD acceleration are not available on macOS. Qwen runs on the CPU.',
       );
     if (
       typeof cuda !== 'boolean' ||

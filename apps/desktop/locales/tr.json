@@ -2480,7 +2480,7 @@
     "No supported browser was found to open YouTube.": "YouTube’u açmak için desteklenen bir tarayıcı bulunamadı.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Mikrofon erişimi reddedildi. Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon bölümünden Capri’ye izin verin.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Ses eğitimi, Windows’ta bir NVIDIA GPU gerektirir. macOS’te kullanılamaz.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Kurulum, Sohbet diliniz için sesi otomatik olarak yükler. Mac’te ses Apple GPU’yu (Metal) kullanır ve gerektiğinde CPU’ya geçer."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Kurulum, Sohbet diliniz için sesi otomatik olarak yükler. Mac’te her ses, kendisi için hangisi daha hızlıysa CPU’da veya Apple GPU’da (Metal) çalışır."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

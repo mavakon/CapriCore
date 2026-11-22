@@ -10,7 +10,7 @@ import { prepareInterfaceLocale } from './interface-translations.mjs';
 import { macHost } from './host-platform.mjs';
 
 export const MAC_VOICE_INSTALL_HELP =
-  'Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.';
+  'Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.';
 
 export class LanguagePanel {
   constructor({ api, ui, onChange, onOpen, onError, confirm }) {

@@ -2489,7 +2489,7 @@
     "Drag a square around the chessboard. Esc cancels.": "Trace un carré autour de l’échiquier. Échap annule.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "L’accès au micro a été refusé. Autorisez Capri dans Réglages Système → Confidentialité et sécurité → Micro.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "L’entraînement de la voix nécessite un GPU NVIDIA sous Windows. Il n’est pas disponible sur macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "L’installation configure automatiquement la voix pour la langue de conversation. Sur un Mac, la voix utilise le GPU Apple (Metal) et bascule sur le CPU si nécessaire."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "L’installation configure automatiquement la voix pour la langue de conversation. Sur un Mac, chaque voix s’exécute sur le CPU ou sur le GPU Apple (Metal), selon ce qui est le plus rapide pour elle."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

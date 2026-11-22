@@ -1,19 +1,22 @@
 """macOS voice compute selection: Apple GPU (MPS) with CPU fallback.
 
-Most cases use a small PyTorch stand-in, so they run on any CI host. The last
-class runs the real Metal checks when PyTorch is installed on a Mac.
+Most cases use a small PyTorch stand-in, so they run on any CI host. The pool
+test needs PyTorch, and the last class runs the real Metal checks on a Mac.
 """
 # SPDX-License-Identifier: GPL-3.0-only
 import importlib.util
+import json
+from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock, patch
 
 from integrations.voice_runtime import accelerator
 from integrations.voice_runtime.accelerator import (
-    MPS, apple_gpu, empty_cache, gpu_device, is_cuda, is_mps, memory_bytes, mps_preflight,
-    out_of_memory, synchronize,
+    MPS, apple_gpu, empty_cache, engine_config, gpu_device, is_cuda, is_mps, memory_bytes,
+    mps_preflight, out_of_memory, synchronize,
 )
 from integrations.voice_runtime.compatibility import qwen_compute
 from integrations.voice_training.provision import pinned_source
@@ -152,6 +155,81 @@ class AppleGpuSelectionTests(unittest.TestCase):
         torch.cuda.device_count.assert_called_once_with()
 
 
+class AutomaticEngineDeviceTests(unittest.TestCase):
+    """Automatic on a Mac: each engine on the device measured faster for it."""
+    MAC = {'computeDevice': MPS, 'automaticDevice': True, 'cpuThreads': 8}
+
+    def test_automatic_on_a_mac_runs_turbo_and_qwen_on_the_cpu(self):
+        for engine in ('turbo', 'qwen3-tts', 'qwen3-tts-ru-lora'):
+            with self.subTest(engine=engine):
+                config = engine_config(self.MAC, engine)
+                self.assertEqual(config, {**self.MAC, 'computeDevice': 'cpu', 'cpuReason': 'apple-cpu-faster'})
+        self.assertEqual(self.MAC['computeDevice'], MPS, 'the shared settings stay unchanged')
+        self.assertNotIn('cpuReason', self.MAC)
+
+    def test_automatic_on_a_mac_keeps_multilingual_on_the_apple_gpu(self):
+        for engine in ('multilingual-v3', 'tts-pt-br'):
+            with self.subTest(engine=engine):
+                self.assertIs(engine_config(self.MAC, engine), self.MAC)
+
+    def test_explicit_devices_and_other_hosts_use_one_device_for_every_engine(self):
+        explicit_gpu = {**self.MAC, 'automaticDevice': False}
+        without_metal = {**self.MAC, 'computeDevice': 'cpu'}
+        windows = {'computeDevice': 'cuda:0', 'cpuThreads': 8}
+        for config in (explicit_gpu, without_metal, windows):
+            for engine in ('turbo', 'qwen3-tts', 'qwen3-tts-ru-lora', 'multilingual-v3'):
+                with self.subTest(config=config, engine=engine):
+                    self.assertIs(engine_config(config, engine), config)
+
+
+TORCH = importlib.util.find_spec('torch') is not None
+
+
+@unittest.skipUnless(TORCH, 'needs PyTorch')
+class VoicePoolDeviceTests(unittest.TestCase):
+    SELECTED = {
+        'en': {'backend': 'chatterbox-turbo'},
+        'fr': {'backend': 'chatterbox-multilingual-v3'},
+        'ru': {'backend': 'qwen3-tts', 'id': 'qwen3-tts-1.7b-capri-ru'},
+    }
+
+    @staticmethod
+    def engine(config, *_args, **_kwargs):
+        return NS(config=config, decoder_device=config['computeDevice'], precision='float32',
+                  decoder_reason=config.get('cpuReason', 'apple-gpu'))
+
+    def test_the_pool_starts_each_engine_on_its_device_and_reports_that_device(self):
+        from integrations.voice_runtime import multilingual
+
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'voice-profile.json').write_text(json.dumps({'id': 'capri'}), encoding='utf-8')
+            config = {'computeDevice': MPS, 'automaticDevice': True, 'profilePath': Path(folder)}
+            qwen = NS(QwenVoice=Mock(side_effect=self.engine))
+            with patch.object(multilingual, 'selected_voice', side_effect=self.SELECTED.__getitem__), \
+                 patch.object(multilingual, 'verified_model'), \
+                 patch.object(multilingual, 'empty_cache'), \
+                 patch.object(multilingual, 'CapriVoice', side_effect=self.engine) as turbo, \
+                 patch.object(multilingual, 'MultilingualVoice', side_effect=self.engine) as chatterbox, \
+                 patch.dict(sys.modules, {'integrations.voice_runtime.qwen': qwen}):
+                pool = multilingual.VoicePool(config)
+                pool.prepare('en')
+                english = pool.health()
+                pool.prepare('fr')
+                french = pool.health()
+                pool.prepare('ru')
+                russian = pool.health()
+        self.assertEqual(turbo.call_args.args[0]['computeDevice'], 'cpu')
+        self.assertEqual(chatterbox.call_args.args[0]['computeDevice'], MPS)
+        self.assertEqual(qwen.QwenVoice.call_args.args[0]['computeDevice'], 'cpu')
+        self.assertEqual((english['activeEngine'], english['computeDevice'], english['decoderReason']),
+                         ('turbo', 'cpu', 'apple-cpu-faster'))
+        self.assertEqual((french['activeEngine'], french['computeDevice'], french['precision']),
+                         ('multilingual-v3', MPS, 'float16-t3/float32-decoder'))
+        self.assertEqual((russian['activeEngine'], russian['computeDevice'], russian['decoderReason']),
+                         ('qwen3-tts-ru-lora', 'cpu', 'apple-cpu-faster'))
+        self.assertEqual(config['computeDevice'], MPS, 'the pool keeps the Apple GPU for later engines')
+
+
 class PinnedSourceTests(unittest.TestCase):
     SOURCE = {'repository': 'https://github.com/resemble-ai/chatterbox.git',
               'revision': '5de7a54aa4e5e2baadb0182dde554908b48b85c2'}
@@ -183,9 +261,6 @@ class PinnedSourceTests(unittest.TestCase):
         self.assertFalse(pinned_source({}, self.SOURCE, 'darwin'))
 
 
-TORCH = importlib.util.find_spec('torch') is not None
-
-
 @unittest.skipUnless(sys.platform == 'darwin' and TORCH, 'needs PyTorch on a Mac')
 class RealMetalTests(unittest.TestCase):
     def test_metal_preflight_runs_on_this_mac(self):
@@ -208,7 +283,11 @@ class RealMetalTests(unittest.TestCase):
 
         expected = MPS if torch.backends.mps.is_available() else 'cpu'
         with patch.dict('os.environ', {'CAPRI_VOICE_COMPUTE_DEVICE': 'auto'}):
-            self.assertEqual(model.settings()['computeDevice'], expected)
+            automatic = model.settings()
+            self.assertEqual((automatic['computeDevice'], automatic['automaticDevice']), (expected, True))
+        with patch.dict('os.environ', {'CAPRI_VOICE_COMPUTE_DEVICE': MPS}):
+            explicit = model.settings()
+            self.assertEqual((explicit['computeDevice'], explicit['automaticDevice']), (expected, False))
         with patch.dict('os.environ', {'CAPRI_VOICE_COMPUTE_DEVICE': 'cpu'}):
             self.assertEqual(model.settings()['computeDevice'], 'cpu')
         with patch.dict('os.environ', {'CAPRI_VOICE_COMPUTE_DEVICE': 'cuda:0'}):

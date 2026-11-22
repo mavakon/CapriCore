@@ -46,6 +46,8 @@ def settings():
         if device not in {'auto', 'cpu', MPS}:
             raise ValueError('Invalid voice compute device')
         value['computeDevice'] = MPS if device != 'cpu' and apple_gpu(torch) else 'cpu'
+        # Automatic then picks the faster device per engine (accelerator.engine_config).
+        value['automaticDevice'] = device == 'auto'
     else:
         if device not in {'auto', 'cpu', 'cuda:0'}:
             raise ValueError('Invalid voice compute device')
@@ -73,7 +75,7 @@ class DecoderMemoryBudget:
     def choose_decoder(self):
         if self.config.get('computeDevice') == 'cpu':
             self.set_decoder_device('cpu')
-            self.decoder_reason = 'configured-cpu'
+            self.decoder_reason = self.config.get('cpuReason', 'configured-cpu')
             return
         if is_mps(self.config.get('computeDevice')):
             # Unified memory: moving the decoder to the CPU frees no GPU-only

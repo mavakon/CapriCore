@@ -2480,7 +2480,7 @@
     "No supported browser was found to open YouTube.": "Hakuna kivinjari kinachotumika kilichopatikana cha kufungua YouTube.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Ufikiaji wa maikrofoni umekataliwa. Ruhusu Capri katika System Settings → Privacy & Security → Microphone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Mafunzo ya sauti yanahitaji GPU ya NVIDIA kwenye Windows. Hayapatikani kwenye macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Usanidi husakinisha sauti ya lugha yako ya mazungumzo kiotomatiki. Kwenye Mac, sauti hutumia GPU ya Apple (Metal) na hubadilika kwenda CPU inapohitajika."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Usanidi husakinisha sauti ya lugha yako ya mazungumzo kiotomatiki. Kwenye Mac, kila sauti huendeshwa kwenye CPU au GPU ya Apple (Metal), kulingana na kipi kina kasi zaidi kwa sauti hiyo."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

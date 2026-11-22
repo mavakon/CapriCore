@@ -384,9 +384,8 @@ export class VoiceModelPanel {
     const qwen = model?.backend === 'qwen3-tts';
     const rocmInstalled = qwen && this.value.qwenRocmReady;
     const rocmOffered = qwen && this.value.qwenRocmSupported;
-    // A Mac has no NVIDIA or AMD installer; Automatic uses its Apple GPU instead.
+    // A Mac has no NVIDIA or AMD installer; it runs Qwen on the CPU.
     const cudaOffered = this.value.qwenAccelerationSupported !== false;
-    const appleGpu = qwen && this.value.appleGpu === true;
     this.get('rocm-actions').hidden = !model?.installed || !rocmOffered || rocmInstalled;
     this.get('rocm').disabled = busy;
     this.get('rocm-help').hidden = !rocmInstalled && !rocmOffered;
@@ -405,9 +404,7 @@ export class VoiceModelPanel {
     );
     this.get('import').disabled = busy;
     const devices = qwen
-      ? appleGpu
-        ? ['Apple GPU', 'CPU']
-        : ['CPU', ...(accelerated ? ['NVIDIA CUDA'] : []), ...(rocmInstalled ? ['AMD ROCm'] : [])]
+      ? ['CPU', ...(accelerated ? ['NVIDIA CUDA'] : []), ...(rocmInstalled ? ['AMD ROCm'] : [])]
       : breeze
         ? ['Vulkan', 'CPU']
         : model?.devices;
@@ -420,7 +417,7 @@ export class VoiceModelPanel {
             ? 'LoRA'
             : this.ui.text('Capri reference voice'));
     this.get('details').textContent = model
-      ? `${model.repository} · ${this.ui.text(model.installed ? 'Installed' : 'Not installed')}${identity} · ${devices.join(' / ')}${model.downloadBytes ? ` · ${this.ui.text('Model weights')} ≈ ${(model.downloadBytes / 1e9).toFixed(2)} GB` : ''}${model.minimumFreeBytes ? ` · ${this.ui.text('Required free space')} ≈ ${(model.minimumFreeBytes / 1e9).toFixed(1)} GB` : ''}${qwen && !accelerated && !rocmInstalled && !appleGpu ? '. ' + this.ui.text('CPU speech is experimental and can be slower than real time.') : ''}`
+      ? `${model.repository} · ${this.ui.text(model.installed ? 'Installed' : 'Not installed')}${identity} · ${devices.join(' / ')}${model.downloadBytes ? ` · ${this.ui.text('Model weights')} ≈ ${(model.downloadBytes / 1e9).toFixed(2)} GB` : ''}${model.minimumFreeBytes ? ` · ${this.ui.text('Required free space')} ≈ ${(model.minimumFreeBytes / 1e9).toFixed(1)} GB` : ''}${qwen && !accelerated && !rocmInstalled ? '. ' + this.ui.text('CPU speech is experimental and can be slower than real time.') : ''}`
       : '';
     const trainable = model?.id === 'chatterbox-turbo' && language === 'en';
     this.get('approve-train').hidden = !trainable;

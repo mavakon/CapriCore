@@ -2480,7 +2480,7 @@
     "No supported browser was found to open YouTube.": "Walang nahanap na suportadong browser para buksan ang YouTube.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Tinanggihan ang access sa mikropono. Payagan ang Capri sa System Settings → Privacy & Security → Microphone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Kailangan ng voice training ang NVIDIA GPU sa Windows. Hindi ito available sa macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Awtomatikong ini-install ng Setup ang boses para sa wika ng iyong pag-uusap. Sa Mac, ginagamit ng boses ang Apple GPU (Metal) at lumilipat sa CPU kung kailangan."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Awtomatikong ini-install ng Setup ang boses para sa wika ng iyong pag-uusap. Sa Mac, tumatakbo ang bawat boses sa CPU o sa Apple GPU (Metal), alinman ang mas mabilis para rito."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

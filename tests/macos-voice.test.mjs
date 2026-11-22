@@ -848,7 +848,7 @@ function catalogRoot() {
   return root;
 }
 
-test('the Mac voice catalog offers the Apple GPU and no NVIDIA, AMD or Breeze installers', async () => {
+test('the Mac voice catalog lists each voice’s faster device and no NVIDIA, AMD or Breeze installers', async () => {
   const root = catalogRoot();
   const service = new VoiceCatalogService({
     root,
@@ -858,13 +858,16 @@ test('the Mac voice catalog offers the Apple GPU and no NVIDIA, AMD or Breeze in
   });
   const value = await service.refresh();
   assert.equal(value.qwenAccelerationSupported, false);
-  assert.equal(value.appleGpu, true);
   assert.equal(value.qwenRocmSupported, false);
   assert.equal(value.russianQwenCudaReady, false);
   assert.equal(value.breezeSupported, false);
   const devices = Object.fromEntries(value.models.map((model) => [model.id, model.devices]));
-  assert.deepEqual(devices['chatterbox-turbo'], ['cpu', 'mps']);
-  assert.deepEqual(devices['qwen3-tts-1.7b-capri-ru'], ['cpu', 'mps']);
+  // Measured on an M4 Pro: Turbo and Qwen speak faster on the CPU, Multilingual on Metal.
+  assert.deepEqual(devices['chatterbox-turbo'], ['cpu']);
+  assert.deepEqual(devices['qwen3-tts-0.6b-base'], ['cpu']);
+  assert.deepEqual(devices['qwen3-tts-1.7b-capri-ru'], ['cpu']);
+  assert.deepEqual(devices['chatterbox-multilingual-v3'], ['cpu', 'mps']);
+  assert.deepEqual(devices['chatterbox-multilingual-pt-br'], ['cpu', 'mps']);
   assert.deepEqual(devices['breeze-tts-2-q4-k'], ['vulkan', 'cpu']);
   assert.equal(value.models.find((model) => model.id === 'chatterbox-turbo').installed, true);
   assert.deepEqual(

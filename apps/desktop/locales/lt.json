@@ -2480,7 +2480,7 @@
     "No supported browser was found to open YouTube.": "Nerasta palaikomos naršyklės, kuria būtų galima atidaryti YouTube.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Prieiga prie mikrofono atmesta. Leiskite Capri skiltyje System Settings → Privacy & Security → Microphone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Balso mokymui reikia NVIDIA GPU su Windows. macOS sistemoje jis nepasiekiamas.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Sąranka automatiškai įdiegia pokalbio kalbos balsą. „Mac“ kompiuteryje balsas naudoja „Apple“ GPU (Metal), o prireikus persijungia į CPU."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Sąranka automatiškai įdiegia pokalbio kalbos balsą. „Mac“ kompiuteryje kiekvienas balsas veikia CPU arba „Apple“ GPU (Metal) – tame, kuris jam greitesnis."
   },
   "audit": {
     "sourceRevision": "d80aa25032f8f3882663423f7a4ae90fffdf5f26c0c834b6dace1bf6a7fb6ce3",

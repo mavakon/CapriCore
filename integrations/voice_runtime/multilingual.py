@@ -20,7 +20,7 @@ from .text import validate_speech_language
 from .catalog import selected_voice
 from .qwen_provision import RUSSIAN_QWEN_ID
 from .reference_memory import prepare_reference
-from .accelerator import empty_cache, out_of_memory, synchronize
+from .accelerator import empty_cache, engine_config, out_of_memory, synchronize
 
 
 def offline_converter(folder):
@@ -174,8 +174,9 @@ class VoicePool:
             self.kind = None
             gc.collect()
             empty_cache(torch)
-            self.voice = (CapriVoice(self.config) if kind == 'turbo' else
-                          QwenVoice(self.config, model_id=selected.get('id')) if qwen else MultilingualVoice(self.config, component))
+            config = engine_config(self.config, kind)
+            self.voice = (CapriVoice(config) if kind == 'turbo' else
+                          QwenVoice(config, model_id=selected.get('id')) if qwen else MultilingualVoice(config, component))
             self.kind = kind
         self.language = language
         check_cancelled(cancelled)
@@ -193,7 +194,8 @@ class VoicePool:
         voice = self.voice
         graph = getattr(voice, 'graph', None)
         reference_memory = getattr(voice, 'reference_memory', {})
-        compute = self.config.get('computeDevice', 'cuda:0')
+        # The engine's own settings: Automatic on a Mac can run it on the CPU.
+        compute = getattr(voice, 'config', self.config).get('computeDevice', 'cuda:0')
         precision = ('float16-t3/float32-decoder'
                      if self.kind in {'multilingual-v3', 'tts-pt-br'} and compute != 'cpu' else 'float32')
         if self.kind in {'qwen3-tts', 'qwen3-tts-ru-lora'} and voice is not None:

@@ -2478,6 +2478,6 @@
     "No supported browser was found to open YouTube.": "No supported browser was found to open YouTube.",
     "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.": "Microphone access was denied. Allow Capri in System Settings → Privacy & Security → Microphone.",
     "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.": "Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.",
-    "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU.": "Setup installs the voice for your Conversation language automatically. On a Mac, voice uses the Apple GPU (Metal) and falls back to the CPU."
+    "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it.": "Setup installs the voice for your Conversation language automatically. On a Mac, each voice runs on the CPU or the Apple GPU (Metal), whichever is faster for it."
   }
 }
