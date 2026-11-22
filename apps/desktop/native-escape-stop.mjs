@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { applicationBridgeExecutable } from '../../integrations/desktop-actions/service.mjs';
+import { macosHelperEnvironment } from '../../packages/runtime/src/host/macos-helper.mjs';
 
 /** Separate, read-only Escape polling remains independent of input/UIA helpers. */
 export class NativeEscapeStop {
@@ -13,8 +14,18 @@ export class NativeEscapeStop {
     armTimeoutMs = 3000,
     durationMs = 600000,
     env = process.env,
+    platform = process.platform,
   }) {
-    Object.assign(this, { root, spawnImpl, executable, parentPid, armTimeoutMs, durationMs, env });
+    Object.assign(this, {
+      root,
+      spawnImpl,
+      executable,
+      parentPid,
+      armTimeoutMs,
+      durationMs,
+      env,
+      platform,
+    });
     this.current = null;
   }
   get armed() {
@@ -58,13 +69,16 @@ export class NativeEscapeStop {
         const child = this.spawnImpl(executable, [], {
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: {
-            SystemRoot: windows,
-            WINDIR: windows,
-            PATH: path.join(windows, 'System32'),
-            TEMP: path.join(this.root, '.runtime/tmp'),
-            TMP: path.join(this.root, '.runtime/tmp'),
-          },
+          env:
+            this.platform === 'darwin'
+              ? macosHelperEnvironment(this.root)
+              : {
+                  SystemRoot: windows,
+                  WINDIR: windows,
+                  PATH: path.join(windows, 'System32'),
+                  TEMP: path.join(this.root, '.runtime/tmp'),
+                  TMP: path.join(this.root, '.runtime/tmp'),
+                },
         });
         state.child = child;
         state.armTimer = setTimeout(

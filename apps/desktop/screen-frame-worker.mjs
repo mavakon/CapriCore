@@ -3,6 +3,10 @@ import { spawn } from 'node:child_process';
 import { constants, setPriority } from 'node:os';
 import path from 'node:path';
 import { screenshotDimensions } from './screenshot-files.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 
 const rectKeys = ['x', 'y', 'width', 'height'];
 const handlePattern = /^[1-9]\d{0,18}$/;
@@ -12,8 +16,9 @@ const dimensionsValid = (width, height) =>
 
 // One serial, private binary pipe. Resizing and optional PNG encoding stay off Electron's main thread.
 export class ScreenFrameWorker {
-  constructor(root, { spawnImpl = spawn } = {}) {
-    Object.assign(this, { root, spawnImpl });
+  constructor(root, { spawnImpl = spawn, platform = process.platform } = {}) {
+    Object.assign(this, { root, spawnImpl, platform });
+    this.system = platform === 'darwin' ? 'macOS' : 'Windows';
     this.queue = Promise.resolve();
     this.pending = 0;
   }
@@ -81,26 +86,37 @@ export class ScreenFrameWorker {
 
   start() {
     if (this.child) return this.child;
-    const child = this.spawnImpl(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        path.join(this.root, 'integrations/perception/native/capture-display.ps1'),
-        '-Worker',
-      ],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] },
-    );
+    // macOS: the Swift helper speaks the same binary protocol through ScreenCaptureKit.
+    const child =
+      this.platform === 'darwin'
+        ? this.spawnImpl(
+            macosHelperExecutable(this.root, { platform: 'darwin' }),
+            ['screen-worker'],
+            {
+              stdio: ['pipe', 'pipe', 'ignore'],
+              env: macosHelperEnvironment(this.root),
+            },
+          )
+        : this.spawnImpl(
+            'powershell.exe',
+            [
+              '-NoLogo',
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              path.join(this.root, 'integrations/perception/native/capture-display.ps1'),
+              '-Worker',
+            ],
+            { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] },
+          );
     this.child = child;
     try {
       if (child.pid) setPriority(child.pid, constants.priority.PRIORITY_BELOW_NORMAL);
     } catch {}
     const failed = () => {
-      if (this.child === child) this.close(new Error('Windows screen capture stopped'));
+      if (this.child === child) this.close(new Error(`${this.system} screen capture stopped`));
     };
     child.on('error', failed).on('close', failed);
     child.stdin.on('error', failed);
@@ -129,7 +145,7 @@ export class ScreenFrameWorker {
       };
       const abort = () => this.close(signal.reason);
       const deadline = setTimeout(
-        () => this.close(new Error('Windows screen capture timed out')),
+        () => this.close(new Error(`${this.system} screen capture timed out`)),
         7000,
       );
       const receive = (chunk) => {
@@ -142,7 +158,7 @@ export class ScreenFrameWorker {
             chunk = chunk.subarray(length);
             const bytes = header.readInt32LE(28);
             if (header.readInt32LE(0) === 1 && bytes === 0 && !chunk.length) {
-              finish(new Error('Windows could not capture the selected screen'));
+              finish(new Error(`${this.system} could not capture the selected screen`));
               return;
             }
             const bounds = Object.fromEntries(
@@ -176,7 +192,7 @@ export class ScreenFrameWorker {
           }
           finish(null, { ...frame, [format]: pixels });
         } catch {
-          this.close(new Error('Windows returned an invalid screen frame'));
+          this.close(new Error(`${this.system} returned an invalid screen frame`));
         }
       };
       this.finish = finish;
