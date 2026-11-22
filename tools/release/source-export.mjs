@@ -27,6 +27,20 @@ import {
   sourceFiles,
   forbiddenSource as forbidden,
 } from '../../packages/installer/src/payload.mjs';
+
+/**
+ * The account name as a whole word, and its home folder on Windows, macOS or
+ * Linux. Matching whole words keeps a short CI account name from matching
+ * longer identifiers that start with it.
+ */
+export function ownerPatterns(username = userInfo().username) {
+  const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const end = String.raw`(?![\w-]|\.\w)`;
+  return {
+    home: new RegExp(String.raw`(?:[A-Z]:[\\/]+Users|/Users|/home)[\\/]+` + escaped + end, 'i'),
+    name: new RegExp(String.raw`(?<![\w.-])` + escaped + end, 'i'),
+  };
+}
 export { sourceFiles };
 export function hasSourceCredential(text) {
   return (
@@ -83,6 +97,7 @@ export function validateSource(files) {
     'LICENSE',
   ])
     if (!files.includes(name)) errors.push('Missing release document: ' + name);
+  const { home: ownerHome, name: ownerName } = ownerPatterns();
   const scripts = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts;
   for (const command of Object.values(scripts))
     for (const match of command.matchAll(/\bnode\s+([a-zA-Z0-9_./-]+\.(?:mjs|cjs|js))\b/g))
@@ -112,11 +127,11 @@ export function validateSource(files) {
       errors.push(name + ': runtime/model/media binary');
     if (/\.(?:mjs|js|cjs|py|cs|ps1|cmd|json|md|toml|ya?ml|txt)$/.test(name)) {
       const text = bytes.toString('utf8');
-      const homeUser = userInfo().username.toLowerCase();
       if (
         /[A-Z]:[\\/]+AI[ _]ASSISTANT/i.test(text) ||
         text.includes(hostname()) ||
-        (/[A-Z]:[\\/]+Users[\\/]+/i.test(text) && text.toLowerCase().includes(homeUser))
+        ownerHome.test(text) ||
+        (/[A-Z]:[\\/]+Users[\\/]+/i.test(text) && ownerName.test(text))
       )
         errors.push(name + ': private machine path/name');
       if (hasSourceCredential(text)) errors.push(name + ': credential-like content');

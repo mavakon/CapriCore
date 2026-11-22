@@ -196,6 +196,35 @@ keep conversation text out of logs.
 - `npm run chat`: first reply about 13 s, almost all of it reading the
   roughly 8K-token system prompt once. Later replies under 1 s.
 
+## Checks on pull requests
+
+`.github/workflows/macos.yml` runs on a GitHub-hosted Apple silicon runner for
+every pull request (free for public repositories, about 9 minutes):
+
+- `npm run check -- --require-python`, `npm run format:check` and
+  `npm run release:check`.
+- The unit suite through `node tools/checks/test-known-failures.mjs`. It fails on
+  any failure not listed for macOS in `tools/checks/known-failures.json`. The
+  listed tests cover Windows-only features (the installer, the updater, coding
+  mode's `.exe` editors and tasks, computer control); they still run, and must
+  pass, in the Windows job. The job summary lists both, and a listed test that
+  starts passing produces a warning so it can be removed.
+- `npm run setup:macos`, then `node tools/verify/verify-macos-smoke.mjs`:
+  `capri doctor` sees the runtimes and unified memory, and the bundled
+  llama-server answers a chat request with a 1 MB test model on the CPU and on
+  Metal.
+- The desktop (Electron) verifications that pass on macOS: companion settings,
+  button feedback, languages, window dimming, app catalog settings, Spotify
+  settings and the inference API.
+
+Run the same unit check locally with `node tools/checks/test-known-failures.mjs`.
+
+These desktop verifications fail on macOS today and are not part of the job yet:
+`verify-desktop.mjs` (portrait crop focus differs), `verify-settings-first-open.mjs`
+(the capture hook is not called), `verify-text-selection.mjs` (no selection
+range) and `verify-maintenance-offline.mjs`. `verify-settings-lifecycle.mjs`,
+`verify-update-handoff.mjs` and `verify-computer-control.mjs` are Windows-only.
+
 ## What is not done yet
 
 These were left for separate pieces of work:
