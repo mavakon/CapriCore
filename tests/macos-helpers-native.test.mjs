@@ -108,7 +108,9 @@ test('desktop actions answer in the Windows bridge format', { skip }, async () =
     for (const key of ['windowId', 'processId', 'startedAtTicks', 'untrustedControls'])
       assert.ok(key in state.value, key);
   } else {
-    assert.match(state.value.errorCode ?? '', /^COMPUTER_/);
+    // As on Windows, "No foreground window is available." (a CI runner) has no code.
+    assert.ok(state.value.error, 'a failed observation explains itself');
+    if (state.value.errorCode !== undefined) assert.match(state.value.errorCode, /^COMPUTER_/);
   }
 });
 
