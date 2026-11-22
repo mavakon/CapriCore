@@ -119,7 +119,9 @@ How the app is put together:
   the build checks that the helper still matches its receipt, so an app whose
   helper Capri would refuse is never written. `capri-payload.json` lists every
   file with its size, SHA-256 and mode; `capri-build.json` summarises it with a
-  fingerprint.
+  fingerprint. npm's cache stays in `.downloads/macos/npm`, outside the app, and
+  the build stops if any payload file contains the home folder of the Mac
+  building it.
 - On each launch the launcher compares that fingerprint with the installed
   copy's receipt (`.runtime/macos/installed.json`). If they match and setup is
   complete, the launcher process becomes the desktop: it imports the installed
