@@ -184,6 +184,28 @@ general.innerHTML = `
       <p id="general-focus-mode-help">Hide both windows until you bring Capri back from the system tray.</p>
     </div>
   </section>
+  <section class="settings-card general-group" id="general-macos" aria-labelledby="general-macos-title" hidden>
+    <h3 id="general-macos-title">On your Mac</h3>
+    <div class="general-setting general-switch-row" id="general-open-at-login-row">
+      <button id="general-open-at-login" type="button" class="general-toggle" role="switch" aria-checked="false" aria-pressed="false"><span>Start with my Mac</span><span class="general-switch-track" aria-hidden="true"></span></button>
+    </div>
+    <div class="general-setting general-switch-row">
+      <button id="general-show-in-dock" type="button" class="general-toggle" role="switch" aria-checked="true" aria-pressed="true" aria-describedby="general-show-in-dock-help"><span>Live in the Dock</span><span class="general-switch-track" aria-hidden="true"></span></button>
+      <p id="general-show-in-dock-help">Off: she lives in the menu bar only.</p>
+    </div>
+    <div class="general-setting">
+      <label for="general-menu-bar-icon">Menu bar icon</label>
+      <select id="general-menu-bar-icon">
+        <option value="glitch">Glitch bolt</option>
+        <option value="plain">Plain bolt</option>
+        <option value="color">Full color</option>
+      </select>
+    </div>
+    <div class="general-setting general-switch-row">
+      <button id="general-menu-bar-mood" type="button" class="general-toggle" role="switch" aria-checked="true" aria-pressed="true" aria-describedby="general-menu-bar-mood-help"><span>Show her mood on the menu bar icon</span><span class="general-switch-track" aria-hidden="true"></span></button>
+      <p id="general-menu-bar-mood-help">Her bolt shows when she listens, thinks, speaks or sleeps, and counts down timers.</p>
+    </div>
+  </section>
   <section class="settings-card general-group" aria-labelledby="general-session-title">
     <h3 id="general-session-title">Connection, sleep and quit</h3>
     <div class="general-setting">
@@ -1293,6 +1315,41 @@ for (const setting of windowToggles) {
     () => ({ [setting.action === 'portrait' ? 'portrait' : 'alwaysOnTop']: read() }),
   );
 }
+// macOS only: the menu bar icon, Dock and login item. Applied with the General draft.
+const macosMenuBar = { saved: null };
+const macosSwitches = {
+  openAtLogin: $('general-open-at-login'),
+  showInDock: $('general-show-in-dock'),
+  showMood: $('general-menu-bar-mood'),
+};
+const readMacosMenuBar = () => ({
+  ...(macosMenuBar.saved?.loginSupported
+    ? { openAtLogin: macosSwitches.openAtLogin.getAttribute('aria-pressed') === 'true' }
+    : {}),
+  showInDock: macosSwitches.showInDock.getAttribute('aria-pressed') === 'true',
+  iconStyle: $('general-menu-bar-icon').value,
+  showMood: macosSwitches.showMood.getAttribute('aria-pressed') === 'true',
+});
+function showMacosMenuBar(value) {
+  macosMenuBar.saved = value?.supported ? value : null;
+  $('general-macos').hidden = !macosMenuBar.saved;
+  if (!macosMenuBar.saved) return;
+  $('general-open-at-login-row').hidden = !value.loginSupported;
+  for (const [key, button] of Object.entries(macosSwitches)) showGeneralToggle(button, value[key]);
+  $('general-menu-bar-icon').value = value.iconStyle;
+}
+for (const button of Object.values(macosSwitches))
+  button.onclick = () => showGeneralToggle(button, button.getAttribute('aria-pressed') !== 'true');
+addDraft(
+  'general',
+  'general-macos',
+  () => (macosMenuBar.saved ? JSON.stringify(readMacosMenuBar()) : ''),
+  async () => {
+    if (!macosMenuBar.saved) return;
+    showMacosMenuBar(await raw.windowAction('macos-menu-bar', readMacosMenuBar()));
+  },
+  () => showMacosMenuBar(macosMenuBar.saved),
+);
 for (const id of ['dimming-enabled', 'dimming-level', 'dimming-softness'])
   $(id).oninput = () => dimming(dimmingDraft());
 $('settings-portrait-zoom').oninput = () => {
@@ -2144,6 +2201,7 @@ function show(snapshot) {
   windowToggles[1].saved = snapshot.presence?.pinned === true;
   for (const setting of windowToggles) showGeneralToggle($(setting.id), setting.saved);
   showGeneralToggle(focusButton, snapshot.windowSettings?.focusMode);
+  showMacosMenuBar(snapshot.macosMenuBar);
   showAvatarLayout(snapshot.avatarLayout);
   showScreenOptions(snapshot.screenSettings);
   $('general-status').textContent = ui.text(snapshot.backend.message);
@@ -2220,6 +2278,14 @@ function event(value) {
   }
   if (value.type === 'window.focus-mode') {
     showGeneralToggle(focusButton, value.active);
+    return;
+  }
+  if (value.type === 'macos-menu-bar') {
+    if (dirty.has('general-macos')) macosMenuBar.saved = value.settings;
+    else {
+      showMacosMenuBar(value.settings);
+      captureDrafts('general-macos');
+    }
     return;
   }
   const windowToggle = windowToggles.find(({ event }) => event === value.type);
