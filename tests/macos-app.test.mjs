@@ -51,6 +51,7 @@ import {
 import {
   bundleVersions,
   buildSummary,
+  hashAndScan,
   helperPlan,
   iconsetEntries,
   infoPlistChanges,
@@ -76,6 +77,13 @@ import {
   stageMacosUpdate,
 } from '../packages/updater/src/macos.mjs';
 import { UpdateService } from '../apps/desktop/update-service.mjs';
+import {
+  MACOS_HELPERS,
+  buildHelpers,
+  macosHelper,
+  verifyHelpers,
+} from '../tools/release/macos-helpers.mjs';
+import { macosHelperSourceHash } from '../packages/runtime/src/host/macos-helper.mjs';
 import { installedByMacApp } from '../packages/runtime/src/desktop-launcher.mjs';
 
 const repository = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -421,6 +429,46 @@ test('the build lists regular files only, with their modes, in a stable order', 
   mkdirSync(path.join(folder, 'data'));
   writeFileSync(path.join(folder, 'data/private.json'), '{}');
   assert.throws(() => payloadFiles(folder), /outside the app layout/);
+});
+
+test('the build refuses payload files that contain the home folder of the Mac building it', async (t) => {
+  const folder = temporary(t);
+  const home = '/Users/builder';
+  payload(folder, {
+    'apps/desktop/main.mjs': ['export {};'],
+    '.runtime/npm-cache/_logs/debug-0.log': [`cwd ${home}/capri\n`],
+    '.runtime/macos-helpers/0123456789abcdef/capri-macos-helper': [
+      Buffer.concat([Buffer.alloc(16), Buffer.from(`${home}/src/Main.swift`), Buffer.alloc(16)]),
+      0o755,
+    ],
+  });
+  await assert.rejects(
+    payloadManifest(folder, { version: 'v1.2.2', secrets: [home] }),
+    (error) =>
+      error.code === 'CAPRI_PAYLOAD_PRIVATE' &&
+      /2 payload file\(s\) contain a path in this Mac's home folder/.test(error.message) &&
+      error.files.join() ===
+        '.runtime/macos-helpers/0123456789abcdef/capri-macos-helper,' +
+          '.runtime/npm-cache/_logs/debug-0.log',
+  );
+  // Without secrets the same payload hashes as before.
+  const manifest = await payloadManifest(folder, { version: 'v1.2.2' });
+  assert.equal(manifest.files.length, 3);
+
+  // A match that spans two reads is still found, and the hash is unchanged.
+  const large = path.join(folder, 'large.bin');
+  const bytes = Buffer.concat([
+    Buffer.alloc(1024 * 1024 - 5, 1),
+    Buffer.from(home),
+    Buffer.alloc(9),
+  ]);
+  writeFileSync(large, bytes);
+  assert.deepEqual(await hashAndScan(large, [home]), { sha256: sha(bytes), found: true });
+  assert.deepEqual(await hashAndScan(large, ['/Users/someone-else']), {
+    sha256: sha(bytes),
+    found: false,
+  });
+  assert.deepEqual(await hashAndScan(large), { sha256: sha(bytes), found: false });
 });
 
 test('macOS updates use the disk image from the macOS port releases', () => {
@@ -968,4 +1016,81 @@ test('the command line opens Capri.app for folders the app installed', (t) => {
   );
   assert.equal(installedByMacApp(root, 'darwin'), true);
   assert.equal(installedByMacApp(root, 'win32'), false);
+});
+
+test('the app build compiles the Swift helper into the payload and checks its outputs', async (t) => {
+  const payload = temporary(t);
+  const artifact = path.join(payload, '.runtime/macos-helpers/0123456789abcdef/capri-macos-helper');
+  const calls = [];
+  const helper = macosHelper({
+    async buildHelper(root, options) {
+      calls.push({ root, ...options, log: typeof options.log });
+      mkdirSync(path.dirname(artifact), { recursive: true });
+      writeFileSync(artifact, 'helper');
+      writeFileSync(path.join(payload, '.runtime/macos-helpers/build.json'), '{}');
+      return artifact;
+    },
+  });
+  const logged = [];
+  assert.equal(
+    await buildHelpers({
+      root: repository,
+      payload,
+      helpers: [helper],
+      log: (m) => logged.push(m),
+    }),
+    1,
+  );
+  // Built from the payload's own sources, always fresh, for the app's processor.
+  assert.deepEqual(calls, [
+    { root: payload, force: true, arch: 'arm64', platform: 'darwin', log: 'function' },
+  ]);
+  assert.deepEqual(logged, [
+    'built the Capri macOS helper: .runtime/macos-helpers/0123456789abcdef/capri-macos-helper, ' +
+      '.runtime/macos-helpers/build.json.',
+  ]);
+  assert.deepEqual(
+    MACOS_HELPERS.map((entry) => entry.name),
+    ['Capri macOS'],
+  );
+  // The sources ship too, so the installed helper is checked against them.
+  assert.equal(shippedSourceFile('packages/macos-helpers/Sources/main.swift'), true);
+
+  const fake = (outputs) => ({ name: 'fake', build: async () => outputs });
+  for (const outputs of [undefined, [], ['missing'], [artifact]])
+    await assert.rejects(buildHelpers({ root: repository, payload, helpers: [fake(outputs)] }), {
+      message: /The fake helper (named no output|did not produce)/,
+    });
+});
+
+test('a helper whose executable changed after its receipt was written fails the build', (t) => {
+  const payload = temporary(t);
+  const sources = path.join(payload, 'packages/macos-helpers/Sources');
+  mkdirSync(sources, { recursive: true });
+  writeFileSync(path.join(sources, 'main.swift'), 'print("Capri")\n');
+  const folder = path.join(payload, '.runtime/macos-helpers');
+  const artifact = '0123456789abcdef/capri-macos-helper';
+  mkdirSync(path.join(folder, path.dirname(artifact)), { recursive: true });
+  writeFileSync(path.join(folder, artifact), 'signed helper');
+  writeFileSync(
+    path.join(folder, 'build.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      sourceSha256: macosHelperSourceHash(payload),
+      artifact,
+      executableSha256: sha('signed helper'),
+      target: 'arm64-apple-macos14.0',
+    }),
+  );
+  const helpers = [macosHelper()];
+  verifyHelpers({ payload, helpers });
+  // As if signing the whole bundle had re-signed the helper.
+  writeFileSync(path.join(folder, artifact), 'signed again');
+  assert.throws(() => verifyHelpers({ payload, helpers }), /integrity check failed/);
+  // Sources that no longer match the receipt are refused as well.
+  writeFileSync(path.join(folder, artifact), 'signed helper');
+  writeFileSync(path.join(sources, 'main.swift'), 'print("changed")\n');
+  assert.throws(() => verifyHelpers({ payload, helpers }), /out of date/);
+  // Entries without a check are skipped.
+  verifyHelpers({ payload, helpers: [{ name: 'plain', build: async () => [] }] });
 });

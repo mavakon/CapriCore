@@ -137,11 +137,24 @@ export function shippedSourceFile(name) {
   return !/^[^/]+\.cmd$/i.test(name) && !/^\.github\//.test(name);
 }
 
-async function sha256(file) {
+/**
+ * Hashes a file and reports whether it contains any of `secrets` (such as this
+ * Mac's home folder), also where one spans two reads.
+ */
+export async function hashAndScan(file, secrets = []) {
+  const needles = secrets.filter(Boolean).map((value) => Buffer.from(value));
+  const overlap = Math.max(0, ...needles.map((needle) => needle.length - 1));
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file, { highWaterMark: 1024 * 1024 }))
+  let tail = Buffer.alloc(0);
+  let found = false;
+  for await (const chunk of createReadStream(file, { highWaterMark: 1024 * 1024 })) {
     hash.update(chunk);
-  return hash.digest('hex');
+    if (found || !needles.length) continue;
+    const window = tail.length ? Buffer.concat([tail, chunk]) : chunk;
+    found = needles.some((needle) => window.includes(needle));
+    tail = Buffer.from(window.subarray(window.length - Math.min(overlap, window.length)));
+  }
+  return { sha256: hash.digest('hex'), found };
 }
 
 /** Lists a payload folder. Links and special files are refused: the app copies files only. */
@@ -165,18 +178,42 @@ export function payloadFiles(folder) {
   return result.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-export async function payloadManifest(folder, { version, commit = null, concurrency = 16 }) {
+/**
+ * Hashes every payload file. A file that contains one of `secrets` (this Mac's
+ * home folder, for example in a build log or a compiled path) fails the build,
+ * so a disk image never carries the builder's private paths.
+ */
+export async function payloadManifest(
+  folder,
+  { version, commit = null, concurrency = 16, secrets = [] },
+) {
   const files = payloadFiles(folder);
   const hashes = new Array(files.length);
+  const exposed = [];
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, files.length) }, async () => {
       while (next < files.length) {
         const index = next++;
-        hashes[index] = await sha256(files[index].file);
+        const { sha256, found } = await hashAndScan(files[index].file, secrets);
+        hashes[index] = sha256;
+        if (found) exposed.push(files[index].name);
       }
     }),
   );
+  if (exposed.length) {
+    exposed.sort();
+    const shown = exposed.slice(0, 10).join(', ');
+    throw Object.assign(
+      new Error(
+        `${exposed.length} payload file(s) contain a path in this Mac's home folder: ` +
+          shown +
+          (exposed.length > 10 ? ', …' : '') +
+          '.',
+      ),
+      { code: 'CAPRI_PAYLOAD_PRIVATE', files: exposed },
+    );
+  }
   const entries = files.map(({ name, size, mode }, index) => [name, size, hashes[index], mode]);
   const manifest = validateManifest({
     schemaVersion: 1,

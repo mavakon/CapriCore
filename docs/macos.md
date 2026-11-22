@@ -3,12 +3,11 @@
 Capri runs on macOS with Apple silicon (arm64): text chat, memory and the
 animated avatar, with local models on the Metal GPU or an OpenAI-compatible API,
 plus speech recognition and voice (see
-[Voice and speech recognition](#voice-and-speech-recognition)). From source it
-also has computer control, screen capture, window awareness, Spotify playback
-control, the user-tool sandbox and the GPU meter, through a Swift helper (see
+[Voice and speech recognition](#voice-and-speech-recognition)). It also has
+computer control, screen capture, window awareness, Spotify playback control,
+the user-tool sandbox and the GPU meter, through a Swift helper (see
 [Native helpers](#native-helpers)). It installs as `Capri.app` from a disk image,
-or runs from source. The Swift helper inside `Capri.app` is separate follow-up
-work (see [What is not done yet](#what-is-not-done-yet)).
+or runs from source.
 
 ## Install the app
 
@@ -25,7 +24,9 @@ work (see [What is not done yet](#what-is-not-done-yet)).
    memory model every setup needs. Capri then restarts and opens.
 
 Requirements: macOS 13 (Ventura) or later on Apple silicon, and free disk space for the
-models (setup shows the amount).
+models (setup shows the amount). Computer control, screen capture, window
+awareness, Spotify and the GPU meter use the [native helper](#native-helpers),
+which needs macOS 14 (Sonoma) or later; on macOS 13 they stay off.
 
 ### Where Capri keeps things
 
@@ -85,7 +86,8 @@ the Trash.
 
 ## Build the app
 
-On a Mac with Apple silicon and Node.js 24.22.1 (see below), from a clean
+On a Mac with Apple silicon, Node.js 24.22.1 (see below) and the Xcode command
+line tools (`xcode-select --install`, for the Swift helper), from a clean
 checkout:
 
 ```sh
@@ -112,9 +114,15 @@ How the app is put together:
 - `Contents/Resources/app` is the launcher (`apps/macos-launcher`).
   `Contents/Resources/capri` is the payload: the release source files (the same
   set and privacy checks as `npm run release:source`), production npm
-  dependencies installed with the bundled Node.js, the Node.js binary, and
-  llama.cpp. `capri-payload.json` lists every file with its size, SHA-256 and
-  mode; `capri-build.json` summarises it with a fingerprint.
+  dependencies installed with the bundled Node.js, the Node.js binary,
+  llama.cpp, and the [native helper](#native-helpers) compiled from the
+  payload's own Swift sources with its `build.json`. After signing the bundle,
+  the build checks that the helper still matches its receipt, so an app whose
+  helper Capri would refuse is never written. `capri-payload.json` lists every
+  file with its size, SHA-256 and mode; `capri-build.json` summarises it with a
+  fingerprint. npm's cache stays in `.downloads/macos/npm`, outside the app, and
+  the build stops if any payload file contains the home folder of the Mac
+  building it.
 - On each launch the launcher compares that fingerprint with the installed
   copy's receipt (`.runtime/macos/installed.json`). If they match and setup is
   complete, the launcher process becomes the desktop: it imports the installed
@@ -130,11 +138,14 @@ How the app is put together:
 
 ### Adding native helpers and optional components
 
-- Native macOS helpers (for example Swift screen capture or computer control):
-  add an entry to `MACOS_HELPERS` in `tools/release/macos-helpers.mjs`. The build
-  compiles it into the payload; the app installs it with everything else.
-  Processes Capri.app starts are attributed to Capri for Screen Recording,
-  Accessibility and Microphone permission.
+- Native macOS helpers: add an entry to `MACOS_HELPERS` in
+  `tools/release/macos-helpers.mjs`. Its `build` compiles into the payload and
+  returns the files it produced, which the build checks; an optional `verify`
+  runs after the bundle is signed. The app installs the helpers with everything
+  else. Processes Capri.app starts are attributed to Capri for Screen
+  Recording, Accessibility and Microphone permission, so the bundle identifier
+  must stay `com.capri-core.desktop` or those grants are lost. The Swift helper
+  below is the one entry today.
 - Optional first-run downloads (for example speech recognition or a voice):
   add an entry to `MACOS_SETUP_COMPONENTS` in
   `packages/installer/src/macos-setup.mjs`. The setup window lists it and
@@ -373,11 +384,11 @@ The values are median RTF; a second English run gave 0.628 (GPU) and 0.488
 (CPU). The 1.7B Russian Capri voice (a LoRA on Qwen3-TTS) was not measured and
 follows the same rule. Startup with the models on disk took 10 to 17 s, except
 the first Metal start after creating the venv, which took 52 s. A fresh English
-install from a warm uv cache took 11 s. The voice venv, the Qwen venv and uv's cache use about
-1.0, 0.9 and 2.0 GiB. The disk check uses the sizes in `config/macos-runtime.json`
-(`storage`), measured with PyPI's PyTorch for macOS: it asks for 7.0 GiB free for
-English speech and recognition (3.8 GiB of downloads), 5.9 GiB for English speech
-alone.
+install from a warm uv cache took 11 s. The voice venv, the Qwen venv and uv's
+cache use about 1.0, 0.9 and 2.0 GiB. The disk check uses the sizes in
+`config/macos-runtime.json` (`storage`), measured with PyPI's PyTorch for macOS:
+it asks for 7.0 GiB free for English speech and recognition (3.8 GiB of
+downloads), 5.9 GiB for English speech alone.
 
 ## Checks on pull requests
 
@@ -418,17 +429,6 @@ These were left for separate pieces of work:
   speech yet (`MACOS_SETUP_COMPONENTS` in `packages/installer/src/macos-setup.mjs`
   is empty); install it afterwards from Settings → Languages. Speech was tested
   from a source checkout, not yet inside the installed app.
-- **The Swift helper in `Capri.app`.** The app build does not compile the
-  helper yet (`MACOS_HELPERS` in `tools/release/macos-helpers.mjs` is empty). The
-  installed app has no helper unless the Xcode command line tools build one there
-  (turning on Spotify does), and without it computer control, screen capture,
-  window awareness, Spotify and the GPU meter stay off. `npm run setup:macos`
-  builds it for a source checkout. The entry should run `buildMacosHelper` on the payload, so that
-  `.runtime/macos-helpers/build.json` ships with the helper. The helper must
-  always match the receipt's `executableSha256`, so if signing the bundle
-  re-signs the helper, that digest has to be written again afterwards. The
-  helper needs macOS 14 or later, while the app opens on macOS 13; on macOS 13
-  the helper's features would stay off.
 - **Native features without a Swift version yet.** Task recording, YouTube Music
   tab control, camera calls, the per-process and local-model load meters,
   Windows media-session playback, Steam game launch, the desktop teleport menu
