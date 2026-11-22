@@ -156,13 +156,17 @@ try {
   service = await startService();
   const cold = await ask(service, 'first reply, nothing saved yet');
   await ask(service, 'later reply (idle unload after 3 s)', 3);
+  // The runner saves its state, then stops; /api/ps is empty only after both.
   const deadline = Date.now() + 30000;
-  while (!readdirSync(slots).some((name) => name.endsWith('.bin'))) {
-    assert.ok(Date.now() < deadline, 'The idle unload did not save the chat state.');
+  while ((await (await fetch(service.url + '/api/ps')).json()).models.length) {
+    assert.ok(Date.now() < deadline, 'The runner did not unload after its keep-alive.');
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  const ps = await (await fetch(service.url + '/api/ps')).json();
-  assert.deepEqual(ps.models, [], 'the runner unloaded');
+  assert.equal(
+    readdirSync(slots).filter((name) => name.endsWith('.bin')).length,
+    1,
+    'the idle unload saved the chat state',
+  );
   const idle = await ask(service, 'first reply after the idle unload');
   await service.stop();
   service = undefined;
