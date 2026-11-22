@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createServer } from 'node:net';
-import { randomBytes } from 'node:crypto';
-import { linkSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -47,6 +56,11 @@ function modelPaths(root, model) {
   }
 }
 
+// One persisted chat state per Capri root. The name carries a fingerprint of
+// everything that shapes the saved KV and recurrent state, so a state is never
+// restored into a different model, engine build or context layout.
+const slotFile = /^chat-[0-9a-f]{16}\.bin$/;
+
 const bounded = (value, fallback, min, max) =>
   Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 const illegalInstruction = 'CAPRI_LLAMA_ILLEGAL_INSTRUCTION';
@@ -72,6 +86,7 @@ export class LlamaWorkers {
     startupTimeoutMs = 160000,
     automaticGpuStartupTimeoutMs = 75000,
     canRetryIllegalInstruction = false,
+    slotCache,
   }) {
     Object.assign(this, {
       root,
@@ -82,6 +97,9 @@ export class LlamaWorkers {
       startupTimeoutMs,
       automaticGpuStartupTimeoutMs,
       canRetryIllegalInstruction,
+      // { directory, version, timeoutMs }: keep the processed chat prompt across
+      // idle unloads and restarts instead of evaluating it again on first use.
+      slotCache: slotCache?.directory ? { timeoutMs: 20000, ...slotCache } : undefined,
     });
     this.slots = {
       chat: { queue: Promise.resolve() },
@@ -100,11 +118,13 @@ export class LlamaWorkers {
     clearTimeout(slot.timer);
     if (!slot.worker) return;
     const worker = slot.worker;
+    await this.saveSlot(worker);
     await worker.process.stop();
     slot.worker = undefined;
     worker.dispose();
   }
   async open(model, role, options, signal, allowGpu, baseline = false) {
+    const slotState = role === 'chat' ? this.slotState(model, options, allowGpu, baseline) : null;
     const modelFiles = modelPaths(this.root, model);
     const port = await allocatePort().catch((error) => {
       modelFiles.dispose();
@@ -157,6 +177,7 @@ export class LlamaWorkers {
             '--reasoning-format',
             'deepseek',
           ]),
+      ...(slotState ? ['--slot-save-path', this.slotCache.directory] : []),
     ];
     let child;
     try {
@@ -184,6 +205,7 @@ export class LlamaWorkers {
             process: child,
             allowGpu,
             baseline,
+            ...(slotState && { slotFile: slotState }),
             dispose: modelFiles.dispose,
           };
         if (!timeout.aborted)
@@ -259,9 +281,11 @@ export class LlamaWorkers {
           worker = await this.openCompatible(model, role, options, requestSignal, false);
         }
         slot.worker = worker;
+        await this.restoreSlot(worker, requestSignal);
       }
       try {
         try {
+          worker.used = true;
           return await work(worker, requestSignal);
         } catch (error) {
           const failure = await workerFailure(error, worker.process, requestSignal);
@@ -277,6 +301,7 @@ export class LlamaWorkers {
           if (!canRetry()) throw failure;
           worker = await this.open(model, role, options, requestSignal, allowGpu, true);
           slot.worker = worker;
+          worker.used = true;
           try {
             return await work(worker, requestSignal);
           } catch (retryError) {
@@ -299,6 +324,95 @@ export class LlamaWorkers {
         }
       }
     });
+  }
+  /** Name of the saved state for this exact model, engine and context layout. */
+  slotState(model, options, allowGpu, baseline) {
+    if (!this.slotCache) return null;
+    try {
+      mkdirSync(this.slotCache.directory, { recursive: true, mode: 0o700 });
+      const files = model.files.map(({ file, size, projector }) => {
+        const info = statSync(file);
+        return [path.basename(file), size ?? info.size, Math.trunc(info.mtimeMs), !!projector];
+      });
+      const identity = [
+        this.slotCache.version ?? '',
+        model.name,
+        files,
+        model.templateFile ? path.basename(model.templateFile) : null,
+        options.context,
+        !!allowGpu,
+        !!baseline,
+      ];
+      const hash = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+      return `chat-${hash.slice(0, 16)}.bin`;
+    } catch {
+      return null;
+    }
+  }
+  async slotRequest(worker, action, signal) {
+    const response = await fetch(`${worker.url}/slots/0?action=${action}`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.any([
+        ...(signal ? [signal] : []),
+        AbortSignal.timeout(this.slotCache.timeoutMs),
+      ]),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${worker.token}` },
+      body: JSON.stringify({ filename: worker.slotFile }),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`llama.cpp could not ${action} the chat state (HTTP ${response.status}).`);
+    }
+    return response.json();
+  }
+  /** Load the state saved when this runner last stopped. The file is consumed:
+   * the running slot now holds it, and it is written again on the next stop. */
+  async restoreSlot(worker, signal) {
+    if (!worker.slotFile) return;
+    const file = path.join(this.slotCache.directory, worker.slotFile);
+    try {
+      statSync(file);
+    } catch {
+      return;
+    }
+    try {
+      const result = await this.slotRequest(worker, 'restore', signal);
+      this.slotCache.report?.({
+        action: 'restore',
+        tokens: result.n_restored,
+        bytes: result.n_read,
+        ms: result.timings?.restore_ms,
+      });
+    } catch {
+      // A stale or partial file only costs the normal first evaluation.
+    } finally {
+      rmSync(file, { force: true });
+    }
+  }
+  /** Save the processed conversation before a runner stops, then keep only it. */
+  async saveSlot(worker) {
+    if (!worker.slotFile || !worker.used || !worker.process.alive()) return;
+    const { directory } = this.slotCache;
+    try {
+      const result = await this.slotRequest(worker, 'save');
+      this.slotCache.report?.({
+        action: 'save',
+        tokens: result.n_saved,
+        bytes: result.n_written,
+        ms: result.timings?.save_ms,
+      });
+    } catch {
+      rmSync(path.join(directory, worker.slotFile), { force: true });
+      return;
+    }
+    try {
+      for (const name of readdirSync(directory))
+        if (slotFile.test(name) && name !== worker.slotFile)
+          rmSync(path.join(directory, name), { force: true });
+    } catch {
+      /* Old states are removed on the next successful save. */
+    }
   }
   keepAlive(value) {
     if (typeof value === 'string') {
