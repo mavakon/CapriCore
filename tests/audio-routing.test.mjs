@@ -6,7 +6,15 @@ import {
   audioRouteRequest,
   audioRoutingPreferences,
   nativeMusicPackets,
+  nativeMusicSource,
 } from '../apps/desktop/audio-routing.mjs';
+
+test('music uses a chosen route, the macOS default output tap, or the Windows renderer stream', () => {
+  assert.equal(nativeMusicSource('{capture-device-id}', 'win32'), '{capture-device-id}');
+  assert.equal(nativeMusicSource('', 'win32'), '');
+  assert.equal(nativeMusicSource('in:BlackHole2ch_UID', 'darwin'), 'in:BlackHole2ch_UID');
+  assert.equal(nativeMusicSource('', 'darwin'), 'out:default');
+});
 
 test('a first audio preference stores an endpoint ID independently of its display label', () => {
   const value = structuredClone(AUDIO_ROUTING_DEFAULTS);

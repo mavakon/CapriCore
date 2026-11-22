@@ -2,7 +2,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import {
   musicDetectorConfig,
@@ -74,7 +81,12 @@ function fixture() {
   };
 }
 const prepare = (f, options = {}) =>
-  prepareMusicDetector(f.root, { fetchImpl: f.fetchImpl, execute: f.execute, ...options });
+  prepareMusicDetector(f.root, {
+    fetchImpl: f.fetchImpl,
+    execute: f.execute,
+    platform: 'win32',
+    ...options,
+  });
 
 test('the music model accepts only four pinned fixed files with unique safe names', () => {
   for (const change of [
@@ -105,7 +117,9 @@ test('a checked official archive is staged, checked again and cached without sub
   const f = fixture(),
     progress = [];
   assert(
-    musicPython(f.root).endsWith('router-venv' + path.sep + 'Scripts' + path.sep + 'python.exe'),
+    musicPython(f.root, 'win32').endsWith(
+      'router-venv' + path.sep + 'Scripts' + path.sep + 'python.exe',
+    ),
   );
   const first = await prepare(f, { progress: (value) => progress.push(value) });
   assert.equal(f.downloads(), 1);
@@ -194,6 +208,64 @@ test('preparation cancellation and missing local Python never publish a detector
   const empty = mkdtempSync(path.join(parent, 'missing-python-'));
   mkdirSync(path.join(empty, 'config'));
   writeFileSync(path.join(empty, 'config/music-detector.json'), JSON.stringify(f.config));
-  assert.equal(musicPython(empty), null);
+  assert.equal(musicPython(empty, 'win32'), null);
+  assert.equal(musicPython(empty, 'darwin'), null);
   await assert.rejects(prepareMusicDetector(empty), /Run Capri Setup again/);
+});
+
+/** The macOS layout: asr-venv/bin/python links to the managed interpreter. */
+function macFixture(target) {
+  const f = fixture();
+  const managed = path.join(f.root, '.runtime/python/cpython-3.11.17-macos-aarch64-none/bin');
+  mkdirSync(managed, { recursive: true });
+  writeFileSync(path.join(managed, 'python3.11'), 'fixture-never-executed');
+  const python = path.join(f.root, '.runtime/asr-venv/bin/python');
+  mkdirSync(path.dirname(python), { recursive: true });
+  symlinkSync(target ?? path.join(managed, 'python3.11'), python);
+  const extracted = [];
+  return {
+    ...f,
+    python,
+    extracted,
+    async execute(command, args, options) {
+      extracted.push([command, args]);
+      assert.equal(command, '/usr/bin/unzip');
+      assert.equal(options.cwd, f.root);
+      const destination = args[args.indexOf('-d') + 1];
+      assert(
+        path
+          .resolve(destination)
+          .startsWith(path.join(f.root, '.runtime/music-detector') + path.sep),
+      );
+      for (const [name, data] of f.payloads) writeFileSync(path.join(destination, name), data);
+    },
+  };
+}
+
+test('on macOS the linked venv Python is accepted and unzip extracts only the four model files', async () => {
+  const f = macFixture();
+  assert.equal(musicPython(f.root, 'darwin'), f.python);
+  const result = await prepare(f, { platform: 'darwin' });
+  assert.equal(result.python, f.python);
+  assert.equal(f.extracted.length, 1);
+  const [, args] = f.extracted[0];
+  assert.deepEqual(args.slice(0, 2), ['-q', '-j']);
+  assert.equal(path.basename(args[2]), hash(f.archive) + '.zip');
+  assert.deepEqual(
+    args.slice(3, -2),
+    ['yamnet.onnx', 'yamnet.data', 'labels.txt', 'metadata.json'].map(
+      (name) => 'yamnet-onnx-float/' + name,
+    ),
+  );
+  for (const spec of f.config.files)
+    assert.equal(hash(readFileSync(path.join(result.folder, spec.name))), spec.sha256);
+});
+
+test('on macOS a venv Python linked outside the managed interpreter folder is refused', async () => {
+  const outside = path.join(mkdtempSync(path.join(parent, 'outside-')), 'python3');
+  writeFileSync(outside, 'fixture-never-executed');
+  const f = macFixture(outside);
+  await assert.rejects(prepare(f, { platform: 'darwin' }), /Run Capri Setup again/);
+  assert.equal(f.downloads(), 0);
+  assert.equal(f.extracted.length, 0);
 });

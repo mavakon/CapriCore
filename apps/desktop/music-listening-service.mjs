@@ -73,6 +73,11 @@ export class MusicDecision {
   }
 }
 
+const WORKER_ENVIRONMENT = {
+  win32: ['SystemRoot', 'WINDIR', 'PATH', 'TEMP', 'TMP'],
+  darwin: ['PATH', 'HOME', 'TMPDIR', 'LANG'],
+};
+
 /** Independent CPU classifier. PCM is ephemeral private stdio, never ASR/API/logs. */
 export class MusicListeningService {
   constructor({
@@ -84,8 +89,19 @@ export class MusicListeningService {
     spawnImpl = spawn,
     now = Date.now,
     staleMs = 5000,
+    platform = process.platform,
   }) {
-    Object.assign(this, { root, settings, emit, available, prepare, spawnImpl, now, staleMs });
+    Object.assign(this, {
+      root,
+      settings,
+      emit,
+      available,
+      prepare,
+      spawnImpl,
+      now,
+      staleMs,
+      platform,
+    });
     this.session = null;
     this.decision = new MusicDecision();
     this.phase = 'off';
@@ -95,7 +111,9 @@ export class MusicListeningService {
     return {
       phase: this.phase,
       enabled: Boolean(this.session),
-      supported: process.platform === 'win32' && Boolean(musicPython(this.root)),
+      supported:
+        Object.hasOwn(WORKER_ENVIRONMENT, this.platform) &&
+        Boolean(musicPython(this.root, this.platform)),
       hearingMusic: this.decision.hearingMusic,
       energy: this.decision.energy,
       musicScore: this.decision.music,
@@ -137,6 +155,7 @@ export class MusicListeningService {
   async initialize(session) {
     try {
       const result = await this.prepare(this.root, {
+        platform: this.platform,
         signal: session.controller.signal,
         progress: (value) => {
           if (this.session !== session) return;
@@ -146,7 +165,7 @@ export class MusicListeningService {
       });
       if (this.session !== session || session.controller.signal.aborted) return;
       const env = Object.fromEntries(
-        ['SystemRoot', 'WINDIR', 'PATH', 'TEMP', 'TMP']
+        (WORKER_ENVIRONMENT[this.platform] ?? WORKER_ENVIRONMENT.win32)
           .filter((key) => process.env[key])
           .map((key) => [key, process.env[key]]),
       );

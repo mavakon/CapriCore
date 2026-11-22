@@ -1,7 +1,7 @@
 # Music listening
 
 Music listening is an optional, local animation feature. It is disabled by
-default. When enabled, Capri listens to Windows system playback, across playback
+default. When enabled, Capri listens to system playback, across playback
 applications, and reacts after music is detected consistently. This is separate
 from microphone recognition, system-audio wake words, screen observation, and
 conversation. Turning off music listening stops its capture and classifier.
@@ -61,6 +61,17 @@ Permission for music listening does not enable microphone recognition or grant
 screen observation. It does not bypass the user's separate capture controls.
 The input is what Windows supplies as system playback; application-exclusive,
 protected, or differently routed audio can be unavailable.
+
+## macOS
+
+On macOS, Capri captures the default output through a private Core Audio process
+tap in the Swift helper (`audio-endpoints capture out:default`, macOS 14.2 or
+later) instead of the renderer's loopback stream. The detector runs in the speech
+recognition environment (`.runtime/asr-venv`), so install speech from Settings →
+Languages first; without it the music button stays unavailable. The model is
+extracted with `/usr/bin/unzip`, limited to its four files, and verified as on
+Windows. macOS asks for System Audio Recording on the first start; until it is
+allowed, the tap can deliver silence and Capri never reacts.
 
 ## Reproducing verification
 

@@ -330,7 +330,7 @@ fixed environment (`HOME`, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `TMPDIR` inside
 | `window-events`                                                                        | `WindowsEvents.cs`               | App switches, full screen, lock and unlock, sleep and wake, idle after 5 minutes; with Accessibility, focused-window and tab changes. Titles and images are never reported.                                                                                                                                                                                                                                                                                          |
 | `window-follow`                                                                        | `desktop-teleport.cs --watch`    | Follows the window the avatar sits on (`anchor <id> visible x y w h`, `hidden`, `closed`) and reports the mouse release of a drag that began on the avatar. Reads only window bounds and the button state.                                                                                                                                                                                                                                                           |
 | `spotify`                                                                              | `SpotifyBridge.cs`               | Spotify desktop control through its AppleScript dictionary. Never launches Spotify.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `audio-endpoints list` / `capture <id>`                                                | `audio-endpoints.cs`             | Core Audio devices (`in:<UID>`, `out:<UID>`) and 16 kHz mono capture in the same `CAPRI-AUDIO-1` packet format. Outputs are captured through a Core Audio process tap (macOS 14.2 or later).                                                                                                                                                                                                                                                                         |
+| `audio-endpoints list` / `capture <id>`                                                | `audio-endpoints.cs`             | Core Audio devices (`in:<UID>`, `out:<UID>`) and 16 kHz mono capture in the same `CAPRI-AUDIO-1` packet format. Outputs are captured through a Core Audio process tap (macOS 14.2 or later); `out:default` is the current default output.                                                                                                                                                                                                                            |
 | `gpu`                                                                                  | GPU inventory and load           | Apple GPU name, core count and load from IOKit. Memory is reported as shared, without a VRAM figure.                                                                                                                                                                                                                                                                                                                                                                 |
 | `tool-sandbox`                                                                         | `tool-sandbox.cs` (AppContainer) | Runs an approved Node or Python user tool under a fixed Seatbelt profile (see below).                                                                                                                                                                                                                                                                                                                                                                                |
 | `permissions [request accessibility \| request screen-recording]`                      | —                                | Reads the privacy permissions; `request` shows the macOS prompt.                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -361,7 +361,12 @@ name that app. Capri never changes these settings itself.
 | Screen Recording       | Computer-control screenshots, screen frames, screen awareness   | Capri asks once per run when computer control starts. Capture fails cleanly until it is allowed.         |
 | Automation → Spotify   | Spotify control                                                 | On the first Spotify command. A refusal is reported as `automation_denied`.                              |
 | Microphone             | Microphone capture                                              | On first capture.                                                                                        |
-| System audio recording | Capturing an output device                                      | On first capture. Needs `NSAudioCaptureUsageDescription` in the app's Info.plist.                        |
+| System audio recording | Music listening, capturing an output device                     | On first capture. Needs `NSAudioCaptureUsageDescription` in the app's Info.plist.                        |
+
+Without System audio recording, macOS can give the tap silence instead of an
+error, so music listening runs but never hears music. Allow Capri under System
+Settings → Privacy & Security → Screen & System Audio Recording → System Audio
+Recording Only.
 
 ### Tool sandbox
 
@@ -467,9 +472,8 @@ These were left for separate pieces of work:
   `unsupported`, while playback, volume, seek, shuffle, repeat and Spotify links
   work. Other application actions of the desktop bridge (opening apps, files,
   drives) answer `MACOS_ACTION_UNAVAILABLE`.
-- **Call audio routing and music detection.** The audio helper lists and
-  captures devices on macOS, but call audio routing and music detection are not
-  wired up on macOS yet.
+- **Call audio routing.** The audio helper lists and captures devices on macOS,
+  but call audio routing is not wired up on macOS yet.
 - **Distribution signing.** `Capri.app` is signed ad hoc. Sharing it beyond
   your own Macs without the Gatekeeper warning needs an Apple Developer ID
   signature with the hardened runtime and notarization. Running from source still
