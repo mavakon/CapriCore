@@ -164,7 +164,7 @@ async function installLlama(cache, payload) {
     throw new Error('Unexpected llama.cpp folder.');
 }
 
-function installDependencies(payload, { node, npm }) {
+function installDependencies(cache, payload, { node, npm }) {
   const env = {
     HOME: os.homedir(),
     TMPDIR: os.tmpdir(),
@@ -172,7 +172,15 @@ function installDependencies(payload, { node, npm }) {
     LANG: 'en_US.UTF-8',
     npm_config_update_notifier: 'false',
   };
-  run(node, [npm, 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: payload, env });
+  // The source .npmrc keeps npm's cache (and its logs, which name this Mac's
+  // home folder) in .runtime/npm-cache; the app must not ship it.
+  const npmCache = path.join(cache, 'npm');
+  run(node, [npm, 'ci', '--omit=dev', '--no-audit', '--no-fund', `--cache=${npmCache}`], {
+    cwd: payload,
+    env,
+  });
+  if (existsSync(path.join(payload, '.runtime', 'npm-cache')))
+    throw new Error('npm wrote its cache into the payload.');
   // Symbolic links are npm workspace and .bin shims; the app copies regular
   // files only. Hard links come from install scripts (esbuild links its
   // platform binary into place): give each name its own copy.
@@ -309,11 +317,11 @@ async function main() {
   copySource(payload);
   const tools = await installNode(cache, payload);
   await installLlama(cache, payload);
-  installDependencies(payload, tools);
+  installDependencies(cache, payload, tools);
   await buildHelpers({ root, payload, run, log });
 
   log('hashing the payload.');
-  const manifest = await payloadManifest(payload, { version, commit });
+  const manifest = await payloadManifest(payload, { version, commit, secrets: [os.homedir()] });
   writeFileSync(path.join(resources, MANIFEST_FILE), JSON.stringify(manifest) + '\n');
   const summary = buildSummary(manifest, {
     bundleIdentifier: runtimes.app.bundleIdentifier,
