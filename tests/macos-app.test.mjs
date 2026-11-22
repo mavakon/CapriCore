@@ -640,13 +640,16 @@ test(
     mkdirSync(staged);
     writeFileSync(path.join(staged, 'version'), 'new');
     const ended = spawnSync(process.execPath, ['-e', '0']).pid;
-    // `open` does not exist here; the swap itself completes before it runs.
-    spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
+    // Stop before the script opens the result, so a Mac running the tests opens nothing.
+    const opening = 'exec /usr/bin/open "$app"';
+    assert.equal(SWAP_SCRIPT.trimEnd().endsWith(opening), true);
+    const swap = SWAP_SCRIPT.replace(opening, 'exit 0');
+    spawnSync('/bin/sh', ['-c', swap, 'capri-update', String(ended), app, staged, backup]);
     assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
     assert.equal(existsSync(staged), false);
     assert.equal(existsSync(backup), false);
     // A staged copy that cannot move into place leaves the old app where it was.
-    spawnSync('/bin/sh', ['-c', SWAP_SCRIPT, 'capri-update', String(ended), app, staged, backup]);
+    spawnSync('/bin/sh', ['-c', swap, 'capri-update', String(ended), app, staged, backup]);
     assert.equal(readFileSync(path.join(app, 'version'), 'utf8'), 'new');
     assert.equal(existsSync(backup), false);
   },
