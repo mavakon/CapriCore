@@ -8,6 +8,7 @@ import {
   readdirSync,
   rmdirSync,
   rmSync,
+  statfsSync,
   statSync,
   unlinkSync,
 } from 'node:fs';
@@ -99,7 +100,9 @@ export class LlamaWorkers {
       canRetryIllegalInstruction,
       // { directory, version, timeoutMs }: keep the processed chat prompt across
       // idle unloads and restarts instead of evaluating it again on first use.
-      slotCache: slotCache?.directory ? { timeoutMs: 20000, ...slotCache } : undefined,
+      slotCache: slotCache?.directory
+        ? { timeoutMs: 20000, minimumFreeBytes: 2 * 1024 ** 3, ...slotCache }
+        : undefined,
     });
     this.slots = {
       chat: { queue: Promise.resolve() },
@@ -393,8 +396,11 @@ export class LlamaWorkers {
   /** Save the processed conversation before a runner stops, then keep only it. */
   async saveSlot(worker) {
     if (!worker.slotFile || !worker.used || !worker.process.alive()) return;
-    const { directory } = this.slotCache;
+    const { directory, minimumFreeBytes } = this.slotCache;
     try {
+      // The state can be hundreds of MiB; never be the write that fills the disk.
+      const disk = statfsSync(directory);
+      if (disk.bavail * disk.bsize < minimumFreeBytes) throw new Error('Low disk space.');
       const result = await this.slotRequest(worker, 'save');
       this.slotCache.report?.({
         action: 'save',
