@@ -5,7 +5,7 @@
 // Screen Recording run only when the permission is already granted.
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -275,7 +275,12 @@ test('GPU load comes from IOKit and parses as shared memory', { skip }, async ()
   const { value, code } = await json(['gpu']);
   assert.equal(code, 0);
   const adapters = parseMacosGpuSample(value);
-  if (process.arch === 'arm64') {
+  // A virtual Mac (such as a CI runner) may list a paravirtual GPU or none at all.
+  const virtual =
+    spawnSync('/usr/sbin/sysctl', ['-n', 'kern.hv_vmm_present'], {
+      encoding: 'utf8',
+    }).stdout?.trim() === '1';
+  if (process.arch === 'arm64' && !virtual) {
     const apple = adapters.find(({ vendor }) => vendor === 'apple');
     assert.ok(apple, 'an Apple GPU is listed');
     assert.equal(apple.memoryKind, 'shared');
