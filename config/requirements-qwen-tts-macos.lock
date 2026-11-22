@@ -1,6 +1,8 @@
 # macOS (Apple silicon) / CPython 3.11 lock for Qwen3-TTS. Same versions as requirements-qwen-tts.lock,
-# resolved for macOS wheels (PyTorch MPS from PyPI). Regenerate with:
-#    MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile config/requirements-qwen-tts.in -c <name==version pins of requirements-qwen-tts.lock without +cpu> --python-version 3.11 --python-platform aarch64-apple-darwin --generate-hashes --no-config --output-file config/requirements-qwen-tts-macos.lock
+# resolved for macOS wheels (PyTorch MPS from PyPI). Regenerate from the checkout root after npm run setup:macos-speech, so uv uses Capri's own Python and cache:
+#    mkdir -p .runtime/qwen-lock && grep -E '^[A-Za-z0-9._-]+==' config/requirements-qwen-tts.lock | sed -E 's/ *\\$//; s/[+][a-z0-9.]+$//' > .runtime/qwen-lock/windows-pins.txt
+#    MACOSX_DEPLOYMENT_TARGET=14.0 UV_CACHE_DIR=$PWD/.runtime/uv-cache UV_PYTHON_INSTALL_DIR=$PWD/.runtime/python UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_DOWNLOADS=never .runtime/uv/uv pip compile config/requirements-qwen-tts.in -c .runtime/qwen-lock/windows-pins.txt --python-version 3.11 --python-platform aarch64-apple-darwin --generate-hashes --no-config --no-header --default-index https://pypi.org/simple --index-strategy first-index --output-file config/requirements-qwen-tts-macos.lock
+# then restore these comment lines.
 accelerate==1.12.0 \
     --hash=sha256:3e2091cd341423207e2f084a6654b1efcd250dc326f2a37d6dde446e07cabb11 \
     --hash=sha256:70988c352feb481887077d2ab845125024b2a137a5090d6d7a32b57d03a45df6
