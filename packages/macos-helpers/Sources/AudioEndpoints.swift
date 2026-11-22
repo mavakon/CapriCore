@@ -23,7 +23,11 @@ private func scalar<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertyS
   var where_ = address(selector)
   var value = fallback
   var size = UInt32(MemoryLayout<T>.size)
-  return AudioObjectGetPropertyData(object, &where_, 0, nil, &size, &value) == noErr ? value : nil
+  // Only plain numbers are read this way; their bytes are written in place.
+  let status = withUnsafeMutableBytes(of: &value) { bytes in
+    AudioObjectGetPropertyData(object, &where_, 0, nil, &size, bytes.baseAddress!)
+  }
+  return status == noErr ? value : nil
 }
 
 private func string(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {

@@ -159,6 +159,13 @@ test('helpers get a fixed environment without Capri secrets', () => {
   assert.throws(() => macosHelperTarget('ia32'), /Unsupported/);
 });
 
+/** xcrun as the Command Line Tools answer it. */
+const xcrun = (args) => ({
+  stdout: args.includes('--show-sdk-path')
+    ? '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk\n'
+    : '/Toolchain/usr/bin/swiftc\n',
+});
+
 test('the build compiles every source, signs it and writes the receipt last', async () => {
   const root = checkout({ built: false });
   const stale = path.join(root, MACOS_HELPER_DIRECTORY, '0123456789abcdef');
@@ -166,7 +173,7 @@ test('the build compiles every source, signs it and writes the receipt last', as
   const calls = [];
   const run = async (file, args, options) => {
     calls.push({ file, args, options });
-    if (file === '/usr/bin/xcrun') return { stdout: '/Toolchain/usr/bin/swiftc\n' };
+    if (file === '/usr/bin/xcrun') return xcrun(args);
     if (file === '/Toolchain/usr/bin/swiftc') {
       assert.equal(existsSync(path.join(root, MACOS_HELPER_DIRECTORY, 'build.json')), false);
       writeFileSync(args[args.indexOf('-o') + 1], 'compiled by fixture');
@@ -176,16 +183,23 @@ test('the build compiles every source, signs it and writes the receipt last', as
   const executable = await buildMacosHelper(root, { run, arch: 'arm64', ...darwin });
   assert.deepEqual(
     calls.map(({ file }) => file),
-    ['/usr/bin/xcrun', '/Toolchain/usr/bin/swiftc', '/usr/bin/codesign'],
+    ['/usr/bin/xcrun', '/usr/bin/xcrun', '/Toolchain/usr/bin/swiftc', '/usr/bin/codesign'],
   );
-  const compile = calls[1].args;
+  assert.deepEqual(calls[0].args, ['--sdk', 'macosx', '--find', 'swiftc']);
+  assert.deepEqual(calls[1].args, ['--sdk', 'macosx', '--show-sdk-path']);
+  const compile = calls[2].args;
   for (const flag of ['-O', '-module-name', 'Capri', '-target', 'arm64-apple-macos14.0'])
     assert.ok(compile.includes(flag), flag);
+  // swiftc started by path does not find the SDK on its own.
+  assert.equal(
+    compile[compile.indexOf('-sdk') + 1],
+    '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk',
+  );
   assert.deepEqual(
     compile.filter((value) => value.endsWith('.swift')).map((file) => path.basename(file)),
     ['Common.swift', 'main.swift'],
   );
-  assert.deepEqual(calls[2].args.slice(0, 5), [
+  assert.deepEqual(calls[3].args.slice(0, 5), [
     '--force',
     '--sign',
     '-',
@@ -204,7 +218,7 @@ test('the build compiles every source, signs it and writes the receipt last', as
 test('a failed compile leaves no helper and no receipt', async () => {
   const root = checkout({ built: false });
   const run = async (file, args) => {
-    if (file === '/usr/bin/xcrun') return { stdout: '/Toolchain/usr/bin/swiftc\n' };
+    if (file === '/usr/bin/xcrun') return xcrun(args);
     writeFileSync(args[args.indexOf('-o') + 1], 'partial');
     throw Object.assign(new Error('swiftc failed'), { stderr: 'error: fixture' });
   };
@@ -219,6 +233,9 @@ test('a failed compile leaves no helper and no receipt', async () => {
     buildMacosHelper(root, { run: missing, ...darwin }),
     /xcode-select --install/,
   );
+  const noSdk = async (file, args) =>
+    args.includes('--show-sdk-path') ? { stdout: '' } : xcrun(args);
+  await assert.rejects(buildMacosHelper(root, { run: noSdk, ...darwin }), /xcode-select --install/);
 });
 
 test('macOS screen frames use the helper worker and the shared binary protocol', async () => {

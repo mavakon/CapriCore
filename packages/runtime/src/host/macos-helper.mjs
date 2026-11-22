@@ -136,14 +136,21 @@ export async function buildMacosHelper(
     return macosHelperExecutable(root, { platform });
   const sourceSha256 = macosHelperSourceHash(root);
   const files = macosHelperSources(root);
-  let swiftc;
+  // swiftc started by its own path does not find the macOS SDK (xcrun sets
+  // SDKROOT only for tools it starts), so the SDK is passed explicitly.
+  let swiftc, sdk;
   try {
-    ({ stdout: swiftc } = await run('/usr/bin/xcrun', ['--find', 'swiftc'], {
-      timeout: 60000,
-      maxBuffer: 65536,
-    }));
-    swiftc = swiftc.trim();
-    if (!path.isAbsolute(swiftc)) throw new Error();
+    const locate = async (args) => {
+      const { stdout } = await run('/usr/bin/xcrun', ['--sdk', 'macosx', ...args], {
+        timeout: 60000,
+        maxBuffer: 65536,
+      });
+      const value = String(stdout).trim();
+      if (!path.isAbsolute(value) || /[\0\n]/.test(value)) throw new Error();
+      return value;
+    };
+    swiftc = await locate(['--find', 'swiftc']);
+    sdk = await locate(['--show-sdk-path']);
   } catch {
     throw unavailable(
       'The Swift compiler was not found. Install the Xcode command line tools (xcode-select --install), then run npm run setup:macos-helpers again.',
@@ -166,6 +173,8 @@ export async function buildMacosHelper(
         'Capri',
         '-target',
         macosHelperTarget(arch),
+        '-sdk',
+        sdk,
         '-o',
         temporary,
         ...files,
