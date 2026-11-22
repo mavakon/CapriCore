@@ -104,6 +104,7 @@ test('the chat state saved at shutdown is restored by the next runner and then c
   assert.deepEqual((await chat(first, 'system+tools+hello')).state, ['system+tools+hello']);
   const chatArgs = log[0].args;
   assert.equal(chatArgs[chatArgs.indexOf('--slot-save-path') + 1], directory);
+  assert.equal(chatArgs[chatArgs.indexOf('--ctx-checkpoints') + 1], '4');
   await first.close();
   const saved = readdirSync(directory);
   assert.equal(saved.length, 1);

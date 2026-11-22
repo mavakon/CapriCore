@@ -179,6 +179,13 @@ export class LlamaWorkers {
             'q8_0',
             '--reasoning-format',
             'deepseek',
+            // Hybrid models (Qwen3.5) can only resume from a checkpoint of their
+            // recurrent state, about 50 MiB each for the 4B model. Four keep the
+            // end of the system prompt plus the latest turn: as fast as the
+            // default 32 for Capri's turns, at a fraction of the memory and of
+            // the saved state's size.
+            '--ctx-checkpoints',
+            '4',
           ]),
       ...(slotState ? ['--slot-save-path', this.slotCache.directory] : []),
     ];

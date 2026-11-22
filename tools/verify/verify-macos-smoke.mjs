@@ -3,13 +3,24 @@
 // Confirms that the host is a supported desktop platform, that `capri doctor`
 // finds the pinned runtimes and reports Apple unified memory, and that the
 // bundled llama.cpp loads a tiny GGUF model and answers an OpenAI-style chat
-// request, first on the CPU and then offloaded to Metal. The only download is a
-// pinned test model of about 1 MB.
+// request, first on the CPU and then offloaded to Metal. It also checks that the
+// engine can save a processed prompt and that a fresh server restores it and
+// reuses it, which Capri relies on for a fast first reply. The only download is
+// a pinned test model of about 1 MB.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { desktopPlatform } from '../../packages/runtime/src/host/platform.mjs';
@@ -114,6 +125,91 @@ function freePort() {
   });
 }
 
+async function startServer(model, args) {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const server = spawn(
+    llamaPath,
+    [
+      ...['--host', '127.0.0.1', '--port', String(port), '--model', model],
+      ...['--ctx-size', '256', '--parallel', '1', '--no-webui'],
+      ...args,
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let output = '';
+  server.stdout.on('data', (chunk) => (output += chunk));
+  server.stderr.on('data', (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => server.once('exit', resolve));
+  const stop = async () => {
+    server.kill('SIGTERM');
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    if (server.exitCode === null && server.signalCode === null) server.kill('SIGKILL');
+  };
+  const deadline = Date.now() + 60000;
+  for (;;) {
+    if (server.exitCode !== null) throw new Error(`llama-server exited:\n${output.slice(-4000)}`);
+    const health = await fetch(url + '/health').catch(() => null);
+    if (health?.ok) break;
+    if (Date.now() > deadline) {
+      await stop();
+      throw new Error('llama-server did not become healthy in 60 s.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const post = async (route, body) => {
+    const response = await fetch(url + route, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000),
+    });
+    assert.equal(response.status, 200, `${route}: ${await response.clone().text()}`);
+    return response.json();
+  };
+  return { post, stop, output: () => output };
+}
+
+// The runtime saves llama-server's slot when a runner stops and restores it in
+// the next one (packages/runtime/src/providers/llama-workers.mjs).
+async function slotRoundTrip(model) {
+  const folder = mkdtempSync(path.join(tmpdir(), 'capri-ci-slots-'));
+  const args = ['--device', 'none', '--n-gpu-layers', '0', '--fit', 'off'];
+  const prompt = 'Once upon a time there was a little cat who lived in a big house';
+  const complete = (server, text) =>
+    server.post('/completion', { prompt: text, n_predict: 4, temperature: 0, cache_prompt: true });
+  try {
+    let server = await startServer(model, [...args, '--slot-save-path', folder]);
+    let saved;
+    try {
+      await complete(server, prompt);
+      saved = await server.post('/slots/0?action=save', { filename: 'chat-ci.bin' });
+    } finally {
+      await server.stop();
+    }
+    assert.ok(saved.n_saved > 0, JSON.stringify(saved));
+    server = await startServer(model, [...args, '--slot-save-path', folder]);
+    try {
+      const restored = await server.post('/slots/0?action=restore', { filename: 'chat-ci.bin' });
+      assert.equal(restored.n_restored, saved.n_saved, JSON.stringify(restored));
+      const reply = await complete(server, prompt + ' by the sea');
+      assert.ok(
+        reply.timings?.cache_n > 0,
+        `the restored prompt was not reused: ${JSON.stringify(reply.timings)}`,
+      );
+      pass('llama-server restores a saved prompt and reuses it', {
+        saved: saved.n_saved,
+        reused: reply.timings.cache_n,
+        evaluated: reply.timings.prompt_n,
+      });
+    } finally {
+      await server.stop();
+    }
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
+
 async function chat(model, label, deviceArgs) {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
@@ -185,6 +281,7 @@ async function chat(model, label, deviceArgs) {
 }
 
 const model = await tinyModel();
+await slotRoundTrip(model);
 // Same CPU-only flags the runtime uses when a model must not touch the GPU.
 await chat(model, 'CPU', ['--device', 'none', '--n-gpu-layers', '0', '--fit', 'off']);
 const metalRun = await chat(model, 'Metal', [
