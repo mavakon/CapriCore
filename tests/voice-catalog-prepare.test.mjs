@@ -52,6 +52,7 @@ function mockRuntime(folder) {
     extractions = 0;
   return {
     env: {},
+    platform: 'win32',
     ownerStamp: () => '1234',
     async download(spec, cache) {
       assert.deepEqual(spec, manifest.artifacts.uv);

@@ -8,6 +8,7 @@ import { validateVoicePack, importVoicePack } from './voice-pack.mjs';
 import { processStartedAt } from '../../runtime/src/host/processes.mjs';
 import { readVoiceSettings, voiceOverridePath } from '../../runtime/src/voice-settings.mjs';
 import { ensureUv } from './uv-runtime.mjs';
+import { ensureMacUv } from './macos-python.mjs';
 
 function owned(root, relative) {
   if (typeof relative !== 'string' || path.isAbsolute(relative) || /[:\x00-\x1f]/.test(relative))
@@ -28,6 +29,7 @@ export async function prepareVoiceCatalog({
   download = fetchArtifact,
   emit = () => {},
   ownerStamp = () => processStartedAt(process.pid),
+  platform = process.platform,
 } = {}) {
   if (!path.isAbsolute(root)) throw new Error('Voice installation needs an absolute Capri folder.');
   root = path.resolve(root);
@@ -70,7 +72,8 @@ export async function prepareVoiceCatalog({
         'Repair the Capri reference voice with its original Setup pack. Existing custom voice settings were preserved.',
       );
   }
-  await ensureUv({ root, env, signal, execute, download, emit, ownerStamp });
+  if (platform === 'darwin') await ensureMacUv({ root, signal, download, execute, emit });
+  else await ensureUv({ root, env, signal, execute, download, emit, ownerStamp });
   signal?.throwIfAborted();
   if (!activeReady) {
     importVoicePack(source, root, expected);

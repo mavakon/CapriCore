@@ -266,6 +266,7 @@ import {
   Notification,
   systemPreferences,
 } from 'electron';
+import { requestMicrophoneAccess } from './macos-media-access.mjs';
 import { execFile } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { promisify } from 'node:util';
@@ -2245,6 +2246,9 @@ async function initializeDesktop() {
       throw new Error('The local core is not ready yet.');
     if (!asrAllowed || !asrInstalled)
       throw new Error('Install the selected recognition pack first.');
+    // macOS shows its one-time microphone prompt here. A denial is reported by
+    // the renderer's capture request, exactly as on Windows.
+    await requestMicrophoneAccess({ preferences: systemPreferences });
     const capture = { ...(await microphone.start()), ...liveMicrophone() };
     if (
       !verification &&
@@ -9130,10 +9134,12 @@ async function initializeDesktop() {
     });
     handle('capri:microphone-start', media.microphone.start);
     handle('capri:microphone-devices', (_value, { role }) => media.microphone.devices(role));
-    handle('capri:microphone-monitor', (enabled, { role, frame }) => {
+    handle('capri:microphone-monitor', async (enabled, { role, frame }) => {
       if (role !== 'settings' || typeof enabled !== 'boolean') return false;
       microphoneMonitorGrant = undefined;
       if (!enabled) return true;
+      if (sessionLocked || shuttingDown || !settingsHost?.window?.isVisible()) return false;
+      await requestMicrophoneAccess({ preferences: systemPreferences });
       if (sessionLocked || shuttingDown || !settingsHost?.window?.isVisible()) return false;
       microphoneMonitorGrant = { frame, expiresAt: performance.now() + 5000 };
       return true;

@@ -26,7 +26,7 @@ jobs:
           node --input-type=module -e "import { ensureElectronRuntime } from './packages/installer/src/electron-runtime.mjs'; import { runCommand } from './packages/installer/src/commands.mjs'; await ensureElectronRuntime(process.cwd(), { command: runCommand });"
       - run: npm run check -- --require-python
       - run: npm test
-      - run: python -m unittest tests.model_download_test tests.multilingual_provision_test tests.asr_path_test tests.voice_compatibility_test tests.uv_retry_test tests.hub_download_messages_test tests.speech_language_test tests.voice_startup_failure_test
+      - run: python -m unittest tests.model_download_test tests.multilingual_provision_test tests.asr_path_test tests.voice_compatibility_test tests.uv_retry_test tests.hub_download_messages_test tests.speech_language_test tests.voice_startup_failure_test tests.voice_macos_test tests.macos_locks_test
       - run: npm run format:check
       - run: npm run release:check
       - run: npm run verify:dimming

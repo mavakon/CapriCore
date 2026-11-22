@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 
 import torch
@@ -12,6 +13,7 @@ from .optimize import merge_adapters
 from .profile_settings import merge_local_settings
 from .reference_memory import prepare_reference
 from .initialization import initialization_threads
+from .accelerator import apple_gpu, empty_cache, is_cuda, is_mps, out_of_memory, MPS
 
 
 def settings():
@@ -39,9 +41,17 @@ def settings():
     value["cpuThreads"] = max(1, min(configured_threads, os.cpu_count() or 1, int(os.environ.get("CAPRI_CPU_THREADS", "16"))))
     value["profilePath"] = inside(ROOT, value["profileDir"])
     device = os.environ.get('CAPRI_VOICE_COMPUTE_DEVICE', 'auto')
-    if device not in {'auto', 'cpu', 'cuda:0'}:
-        raise ValueError('Invalid voice compute device')
-    value['computeDevice'] = 'cpu' if device == 'cpu' else 'cuda:0'
+    if sys.platform == 'darwin':
+        # Apple silicon: the GPU through Metal (MPS) when PyTorch can use it, else the CPU.
+        if device not in {'auto', 'cpu', MPS}:
+            raise ValueError('Invalid voice compute device')
+        value['computeDevice'] = MPS if device != 'cpu' and apple_gpu(torch) else 'cpu'
+        # Automatic then picks the faster device per engine (accelerator.engine_config).
+        value['automaticDevice'] = device == 'auto'
+    else:
+        if device not in {'auto', 'cpu', 'cuda:0'}:
+            raise ValueError('Invalid voice compute device')
+        value['computeDevice'] = 'cpu' if device == 'cpu' else 'cuda:0'
     # The LLM's small-model thread budget also reaches this process. On a
     # larger CPU, permit the voice's configured budget while loading on GPU;
     # return to the low inference budget before serving requests. Weak PCs and
@@ -65,7 +75,21 @@ class DecoderMemoryBudget:
     def choose_decoder(self):
         if self.config.get('computeDevice') == 'cpu':
             self.set_decoder_device('cpu')
-            self.decoder_reason = 'configured-cpu'
+            self.decoder_reason = self.config.get('cpuReason', 'configured-cpu')
+            return
+        if is_mps(self.config.get('computeDevice')):
+            # Unified memory: moving the decoder to the CPU frees no GPU-only
+            # memory, so the decoder stays on the Apple GPU unless configured.
+            requested = self.config.get('decoderDevice', 'auto')
+            target = 'cpu' if requested == 'cpu' else MPS
+            self.decoder_reason = 'configured-cpu' if target == 'cpu' else 'apple-gpu'
+            try:
+                self.set_decoder_device(target)
+            except Exception as error:
+                if not out_of_memory(torch, error):
+                    raise
+                self.decoder_oom()
+            self._decoder_check_after = time.monotonic() + 30
             return
         requested = self.config.get('decoderDevice', 'auto')
         target = 'cpu'
@@ -90,12 +114,13 @@ class DecoderMemoryBudget:
 
     def decoder_oom(self):
         self.set_decoder_device('cpu')
-        torch.cuda.empty_cache()
-        self.decoder_reason = 'cuda-oom'
+        empty_cache(torch)
+        self.decoder_reason = 'mps-oom' if is_mps(self.config.get('computeDevice')) else 'cuda-oom'
         self._decoder_check_after = time.monotonic() + 30
 
     def rebalance_decoder(self):
-        if self.config.get('computeDevice') == 'cpu':
+        compute = self.config.get('computeDevice')
+        if compute == 'cpu' or is_mps(compute):
             return
         if self.config.get('decoderDevice', 'auto') != 'auto':
             return
@@ -152,7 +177,9 @@ class CapriVoice(DecoderMemoryBudget):
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
         compute = config.get('computeDevice', 'cuda:0')
-        if compute != 'cpu' and not torch.cuda.is_available():
+        if is_mps(compute) and not apple_gpu(torch):
+            raise RuntimeError("The selected voice needs the Apple GPU (Metal)")
+        if is_cuda(compute) and not torch.cuda.is_available():
             raise RuntimeError("The selected voice needs the local CUDA environment")
         folder = config["profilePath"]
         profile = json.loads((folder / "voice-profile.json").read_text(encoding="utf-8"))
@@ -174,7 +201,7 @@ class CapriVoice(DecoderMemoryBudget):
         # text projection belongs to training and costs 196 MiB in FP32.
         self.engine.t3.text_head = None
         self.adapter_merge_device = 'cpu'
-        if (compute != 'cpu' and config.get('mergeAdapter', True)
+        if (is_cuda(compute) and config.get('mergeAdapter', True)
                 and self.free_gpu_bytes() >= sum(p.numel()*p.element_size() for p in self.engine.t3.parameters()) + 1024**3):
             # Fold on the selected GPU only with generous transient headroom.
             # FP32 and TF32 policy stay unchanged; low-VRAM/CPU devices keep
@@ -186,7 +213,7 @@ class CapriVoice(DecoderMemoryBudget):
         self.reference_memory = prepare_reference(self.engine, str(reference_file), norm_loudness=False)
         # Reference/speaker encoders remain on CPU during conditioning.
         self.engine.device = compute
-        torch.cuda.empty_cache()
+        empty_cache(torch)
         self.config = config
         self.decoder_device = "cpu"
         self.reference = self.engine.conds.gen
@@ -199,7 +226,7 @@ class CapriVoice(DecoderMemoryBudget):
         self.config, self.profile = config, profile
         self.last_metrics = {}
         self.graph = None
-        if compute != 'cpu' and not getattr(torch.version, 'hip', None) and config.get('cudaGraph', True) and config.get('mergeAdapter', True) and self.free_gpu_bytes() >= 768 * 1024**2:
+        if is_cuda(compute) and not getattr(torch.version, 'hip', None) and config.get('cudaGraph', True) and config.get('mergeAdapter', True) and self.free_gpu_bytes() >= 768 * 1024**2:
             try:
                 from .cuda_graph import TurboGraph
                 self.graph = TurboGraph(self.engine.t3, cancelled=lambda: self.cancelled, max_tokens=config['maxSpeechTokens'])
@@ -211,7 +238,7 @@ class CapriVoice(DecoderMemoryBudget):
         # Loading and graph validation leave inactive CUDA allocations behind.
         # Release those once, after setup, so the LLM can share the same GPU.
         # Live model/graph buffers remain allocated; no per-token cache flushing.
-        torch.cuda.empty_cache()
+        empty_cache(torch)
 
     def set_decoder_device(self, device):
         self.engine.s3gen.flow.to(device)
@@ -261,8 +288,8 @@ class CapriVoice(DecoderMemoryBudget):
         try:
             return render(self.engine, text, device=self.decoder_device, reference=self.reference,
                           seed=seed, max_tokens=self.config['maxSpeechTokens'], cancelled=cancelled)
-        except torch.cuda.OutOfMemoryError:
-            if self.decoder_device == 'cpu':
+        except Exception as error:
+            if self.decoder_device == 'cpu' or not out_of_memory(torch, error):
                 raise
             self.decoder_oom()
             check_cancelled(cancelled)

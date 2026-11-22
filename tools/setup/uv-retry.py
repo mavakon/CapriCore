@@ -261,7 +261,20 @@ def run_uv(command, *, environ=None, run=stream_process, sleep=time.sleep,
     raise AssertionError('Unreachable dependency retry state')
 
 
+def _interrupt(_signum, _frame):
+    raise KeyboardInterrupt
+
+
+def stop_on_terminate(platform=os.name, install=signal.signal):
+    """POSIX installers stop this helper with SIGTERM. uv runs in its own
+    session there, so the signal must take the same cleanup path as Ctrl+C
+    instead of leaving uv downloading after the helper exits."""
+    if platform != 'nt':
+        install(signal.SIGTERM, _interrupt)
+
+
 def main():
+    stop_on_terminate()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--uv', required=True)
     parser.add_argument('--pytorch-profile', choices=['legacy', 'blackwell'])

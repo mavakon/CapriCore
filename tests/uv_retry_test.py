@@ -541,6 +541,44 @@ print('Pinned dependency prepared successfully', flush=True)
             self.assertIn('Retrying 2/3', result.stdout)
             self.assertIn('prepared successfully', result.stdout)
 
+    def test_terminate_signal_takes_the_cleanup_path_only_on_posix(self):
+        installed = []
+        retry.stop_on_terminate('nt', lambda *args: installed.append(args))
+        self.assertEqual(installed, [])
+        retry.stop_on_terminate('posix', lambda *args: installed.append(args))
+        self.assertEqual(installed, [(retry.signal.SIGTERM, retry._interrupt)])
+        with self.assertRaises(KeyboardInterrupt):
+            retry._interrupt(retry.signal.SIGTERM, None)
+
+    @unittest.skipIf(os.name == 'nt', 'Windows stops the owned tree with taskkill')
+    def test_installer_terminate_stops_the_uv_session_before_the_helper_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            marker = folder / 'uv.pid'
+            fake_uv = folder / 'uv'
+            fake_uv.write_text(
+                '#!' + sys.executable + '\nimport os, sys, time\n'
+                f'open({str(marker)!r}, "w").write(str(os.getpid()))\n'
+                'print("Downloading torch", flush=True)\ntime.sleep(60)\n', encoding='utf-8')
+            fake_uv.chmod(0o755)
+            helper = subprocess.Popen([sys.executable, str(SCRIPT), '--uv', str(fake_uv), '--', 'pip', 'sync', 'x.lock'],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + 10
+                while not marker.exists() or not marker.read_text():
+                    self.assertLess(time.monotonic(), deadline, 'fake uv did not start')
+                    time.sleep(0.05)
+                uv_pid = int(marker.read_text())
+                helper.terminate()
+                self.assertEqual(helper.wait(timeout=10), 130)
+                # The helper reaps uv before exiting, so the PID no longer exists.
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(uv_pid, 0)
+            finally:
+                if helper.poll() is None:
+                    helper.kill()
+                helper.stdout.close()
+
 
 if __name__ == '__main__':
     unittest.main()

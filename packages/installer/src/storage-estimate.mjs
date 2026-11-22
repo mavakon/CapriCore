@@ -8,6 +8,7 @@ import candidates from '../../../config/multilingual-candidates.json' with { typ
 import speech from '../../../config/multilingual-runtime.json' with { type: 'json' };
 import qwenVoice from '../../../config/qwen-tts-upstream.json' with { type: 'json' };
 import russianVoice from '../../../config/qwen-ru-voice.json' with { type: 'json' };
+import macRuntime from '../../../config/macos-runtime.json' with { type: 'json' };
 
 const MiB = 2 ** 20;
 const { artifacts, storage } = manifest;
@@ -16,11 +17,15 @@ const modelBytes = ({ files }) =>
 
 export const nodeBootstrapBytes = artifacts.node.bytes + storage.nodeExpandedMiB * MiB;
 
-/** Budget for missing speech components, including their shared package runtime. */
+/**
+ * Budget for missing speech components, including their shared package runtime.
+ * macOS installs PyPI's Metal builds of PyTorch (measured from its locks) and no Git.
+ */
 export function estimateSpeechStorage(
   { recognition = 'off', speechLanguage = 'off', router = false, voiceMode },
-  { rocmVoice = false } = {},
+  { rocmVoice = false, platform = process.platform } = {},
 ) {
+  const mac = platform === 'darwin';
   const qwen = voiceMode === 'qwen' || voiceMode === 'qwen-ru';
   const voice = speechLanguage !== 'off' && !qwen;
   let downloadBytes = 0;
@@ -45,16 +50,16 @@ export function estimateSpeechStorage(
     downloadBytes += modelBytes(classifier);
   }
   if (qwen) {
-    addPackages(storage.qwenVoice);
+    addPackages(mac ? macRuntime.storage.qwenVoice : storage.qwenVoice);
     downloadBytes +=
       voiceMode === 'qwen-ru'
         ? modelBytes(russianVoice) + modelBytes(russianVoice.accent)
         : modelBytes(qwenVoice);
   } else if (voice) {
-    addPackages(rocmVoice ? storage.rocmVoice : storage.cudaVoice);
+    addPackages(mac ? macRuntime.storage.voice : rocmVoice ? storage.rocmVoice : storage.cudaVoice);
     const multilingual = speechLanguage === 'pt-BR' ? speech['tts-pt-br'] : speech.tts;
     downloadBytes +=
-      artifacts.git.bytes +
+      (mac ? 0 : artifacts.git.bytes) +
       (speechLanguage === 'en' ? storage.englishVoiceBytes : modelBytes(multilingual));
     if (rocmVoice) addPackages(storage.python); // The AMD runtime additionally needs Python 3.12.
     if (speechLanguage === 'zh') {
@@ -65,7 +70,7 @@ export function estimateSpeechStorage(
   return { downloadBytes, requiredBytes: downloadBytes + extraBytes };
 }
 
-/** Clean-install estimate. Network bytes and unpacked/cache space are separate. */
+/** Windows clean-install estimate. Network bytes and unpacked/cache space are separate. */
 export function estimateInstallStorage(selection, options = {}) {
   const { recognition, voicePack, voiceMode, inferenceMode, modelSource, conversationLanguage } =
     selection;
@@ -78,7 +83,7 @@ export function estimateInstallStorage(selection, options = {}) {
       router: true,
       voiceMode,
     },
-    options,
+    { ...options, platform: 'win32' },
   );
   let downloadBytes =
     artifacts.node.bytes +

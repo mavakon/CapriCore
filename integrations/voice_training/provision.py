@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import sys
 from urllib.error import HTTPError
 
 from .dataset import ROOT, digest, write_json
@@ -80,11 +81,37 @@ def verify_source():
         importlib.metadata.distribution("chatterbox-tts").read_text("direct_url.json")
         or "{}"
     )
-    if installed.get("vcs_info", {}).get("commit_id") != upstream["source"]["revision"]:
-        raise ValueError(
-            "Installed source is not pinned correctly; run setup-voice-training.cmd"
+    if not pinned_source(installed, upstream["source"]):
+        repair = (
+            "reinstall the voice in Settings > Languages"
+            if sys.platform == "darwin"
+            else "run setup-voice-training.cmd"
         )
+        raise ValueError(f"Installed source is not pinned correctly; {repair}")
     return upstream
+
+
+def pinned_source(installed, source, platform=None):
+    """The pinned Git commit, or on macOS the same commit's GitHub archive.
+
+    macOS installs from config/requirements-voice-macos.lock, whose
+    --require-hashes sync verifies the archive's SHA-256 before installing.
+    uv records such a direct URL with an empty archive_info, so the commit in
+    the official archive URL is what identifies the source here, as the
+    commit_id does for a Git install.
+    """
+    revision = source["revision"]
+    if installed.get("vcs_info", {}).get("commit_id") == revision:
+        return True
+    if (platform or sys.platform) != "darwin":
+        return False
+    repository = source["repository"].removesuffix(".git")
+    return (
+        installed.get("url") == f"{repository}/archive/{revision}.tar.gz"
+        and isinstance(installed.get("archive_info"), dict)
+        and "vcs_info" not in installed
+        and "dir_info" not in installed
+    )
 
 
 def verify_model_metadata(config):

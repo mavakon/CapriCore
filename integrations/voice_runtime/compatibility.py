@@ -1,4 +1,5 @@
-"""Small, real CUDA preflight. Importing this module does not import torch."""
+"""Small, real CUDA and Apple GPU preflights. Importing this module does not import torch."""
+from .accelerator import MPS, apple_gpu, macos, mps_preflight
 
 
 def cuda_preflight(torch):
@@ -49,9 +50,31 @@ def qwen_gpu_ready(torch, device):
         return False
 
 
-def qwen_compute(torch, requested, automatic, minimum_gib):
+def apple_qwen_compute(torch, automatic, minimum_gib, platform=None):
+    """Apple GPU when Metal works and its working-set budget fits the model."""
+    try:
+        report = mps_preflight(torch, platform)
+        if report['kernelReady']:
+            budget = report.get('recommendedMaxMemoryBytes')
+            used = int(torch.mps.driver_allocated_memory())
+            if budget is None or budget - used >= minimum_gib * 1024 ** 3:
+                return MPS, 'Apple GPU (Metal)'
+    except (RuntimeError, ValueError, AttributeError, OSError):
+        pass
+    if automatic:
+        return 'cpu', f'Apple GPU unavailable or less than {minimum_gib} GiB of GPU memory budget'
+    raise RuntimeError(f'The Apple GPU is unavailable or has less than {minimum_gib} GiB of GPU memory budget')
+
+
+def qwen_compute(torch, requested, automatic, minimum_gib, platform=None):
     if requested == 'cpu':
         return 'cpu', 'configured voice device'
+    if macos(platform):
+        if not apple_gpu(torch, platform):
+            if automatic:
+                return 'cpu', 'Apple GPU unavailable'
+            raise RuntimeError('The Apple GPU is unavailable to PyTorch on this Mac')
+        return apple_qwen_compute(torch, automatic, minimum_gib, platform)
     candidates = (
         (f'cuda:{index}' for index in range(torch.cuda.device_count()))
         if automatic else (requested,)

@@ -65,13 +65,13 @@ class VoiceCompatibilityTests(unittest.TestCase):
             cuda=NS(is_available=lambda: True, device_count=lambda: 2,
                     mem_get_info=lambda device: (1 if device == 'cuda:0' else 8 * 1024 ** 3, 0)),
         )
-        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 6), ('cuda:1', 'AMD ROCm'))
+        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 6, 'win32'), ('cuda:1', 'AMD ROCm'))
         torch.eye.assert_called_once_with(4, device='cuda:1', dtype=torch.bfloat16)
         with self.assertRaisesRegex(RuntimeError, '6 GiB'):
-            qwen_compute(torch, 'cuda:0', False, 6)
-        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 12)[0], 'cpu')
+            qwen_compute(torch, 'cuda:0', False, 6, 'win32')
+        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 12, 'win32')[0], 'cpu')
         torch.eye.side_effect = RuntimeError('BF16 kernel unavailable')
-        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 6)[0], 'cpu')
+        self.assertEqual(qwen_compute(torch, 'cuda:0', True, 6, 'win32')[0], 'cpu')
 
     def test_generation_matrix_from_pascal_through_blackwell(self):
         # Official NVIDIA capabilities; name fallback is also tested with no CC.

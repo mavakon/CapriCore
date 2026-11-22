@@ -14,6 +14,7 @@ import {
   settings,
 } from '../../packages/runtime/src/index.mjs';
 import { startCompanionVoice } from '../../integrations/voice_runtime/host.mjs';
+import { venvPython } from '../../packages/runtime/src/host/python-env.mjs';
 
 const parent = path.join(root, '.runtime/asr-verification');
 const russian = process.argv.includes('--ru');
@@ -30,7 +31,7 @@ if (!existsSync(reference)) {
 const fakeAudio = path.join(folder, 'fake-microphone.wav');
 if (russian)
   execFileSync(
-    path.join(root, '.runtime/asr-venv/Scripts/python.exe'),
+    venvPython(root, 'asr-venv'),
     [path.join(root, 'scripts/prepare-russian-asr-fixture.py')],
     { windowsHide: true },
   );
@@ -39,7 +40,7 @@ const inputReference = russian
   : reference;
 // Test fixture files contain only a public reference recording, never live audio.
 execFileSync(
-  path.join(root, '.runtime/asr-venv/Scripts/python.exe'),
+  venvPython(root, 'asr-venv'),
   [
     '-c',
     `

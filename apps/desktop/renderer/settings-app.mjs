@@ -26,6 +26,7 @@ import { ApplicationsPanel } from './applications-panel.mjs';
 import { InitiativePanel } from './initiative-panel.mjs';
 import { SpeechPanel } from './speech-panel.mjs';
 import { microphoneConstraints } from './microphone.mjs';
+import { microphoneDeniedMessage } from './host-platform.mjs';
 import { screenObservationText, screenSourceLabel } from './screen-panel.mjs';
 import { TimePanel } from './time-panel.mjs';
 import { ConfirmationDialog } from './confirmation-dialog.mjs';
@@ -802,7 +803,7 @@ async function startMicrophoneMonitor() {
       error?.code === 'CAPRI_SPEAKER_OUTPUT'
         ? error.message
         : ['NotAllowedError', 'SecurityError'].includes(error?.name)
-          ? 'Microphone access was denied. Check Windows microphone access for desktop apps.'
+          ? microphoneDeniedMessage()
           : 'The microphone could not start.',
     );
   };

@@ -33,6 +33,9 @@ const stages = new Set([
   'failed',
 ]);
 const jobIdPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+/** LoRA training uses CUDA with BF16 and its Windows worker; Macs keep the included voice. */
+export const MAC_TRAINING_UNAVAILABLE =
+  'Voice training needs an NVIDIA GPU on Windows. It is not available on macOS.';
 
 export function runVoiceTraining({ root, jobId, signal, onProgress }) {
   return new Promise((resolve, reject) => {
@@ -222,8 +225,9 @@ export class VoiceTrainingService {
     run = runVoiceTraining,
     importRun = runVoiceDatasetImport,
     draftRun = runVoiceDatasetDraft,
+    platform = process.platform,
   }) {
-    Object.assign(this, { root, emit, before, ready, run, importRun, draftRun });
+    Object.assign(this, { root, emit, before, ready, run, importRun, draftRun, platform });
     this.file = voiceDataPath(root, 'data/speech/voice-training-status.json');
     this.lock = voiceDataPath(root, '.runtime/voice-training-job.lock');
     this.value = {
@@ -250,6 +254,7 @@ export class VoiceTrainingService {
     this.applying = false;
   }
   availability() {
+    if (this.platform === 'darwin') return { available: false, reason: MAC_TRAINING_UNAVAILABLE };
     try {
       const config = readTrainingSettings(this.root);
       if (
@@ -323,6 +328,7 @@ export class VoiceTrainingService {
   }
   chooseDataset(source) {
     if (this.busy()) throw new Error('Wait for the current voice operation to finish.');
+    if (this.platform === 'darwin') throw new Error(MAC_TRAINING_UNAVAILABLE);
     if (!existsSync(path.join(this.root, '.runtime/voice-training-venv/Scripts/python.exe')))
       throw new Error(
         'Install the English Capri voice runtime before importing training recordings.',
@@ -432,6 +438,7 @@ export class VoiceTrainingService {
   }
   importDataset(input) {
     if (this.busy()) throw new Error('Wait for the current voice operation to finish.');
+    if (this.platform === 'darwin') return Promise.reject(new Error(MAC_TRAINING_UNAVAILABLE));
     this.task = this.importRecordings(input).finally(() => {
       this.task = null;
     });
