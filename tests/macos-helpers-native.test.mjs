@@ -6,7 +6,15 @@
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -382,10 +390,16 @@ process.stdout.write(JSON.stringify(result));
   assert.equal(slow.value.stage, 'run');
 
   const linked = await json(['tool-sandbox'], {
-    input: request(false, { code: path.join(scratch, 'code', '..', 'code') }),
+    // Not path.join: it would resolve the '..' before the helper sees it.
+    input: request(false, { code: code + '/../code' }),
   });
   assert.equal(linked.value.ok, false);
   assert.equal(linked.value.stage, 'request');
+  symlinkSync(code, path.join(scratch, 'link'));
+  const symlinked = await json(['tool-sandbox'], {
+    input: request(false, { code: path.join(scratch, 'link') }),
+  });
+  assert.equal(symlinked.value.stage, 'request', 'a linked tool folder is refused');
   assert.equal(
     (await run(['tool-sandbox', '--cleanup', 'Capri.Tool.0123456789abcdef01234567'])).code,
     0,
