@@ -54,6 +54,14 @@ export function localPlaybackDevices(devices) {
   return [...outputs.values()];
 }
 
+/**
+ * The native capture music listening uses: the chosen route, or on macOS the
+ * current default output through the helper's process tap. Empty means the
+ * renderer's loopback stream, which only Windows provides.
+ */
+export const nativeMusicSource = (route, platform = process.platform) =>
+  route || (platform === 'darwin' ? 'out:default' : '');
+
 /** The detector consumes half seconds; Windows capture supplies one tenth second at a time. */
 export function nativeMusicPackets({ muted, deliver }) {
   let packet = Buffer.allocUnsafe(32000);

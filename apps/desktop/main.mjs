@@ -324,6 +324,7 @@ import {
   audioRoutingPreferences,
   localPlaybackDevices,
   nativeMusicPackets,
+  nativeMusicSource,
 } from './audio-routing.mjs';
 import { WindowsAudioEndpoints } from './windows-audio-endpoints.mjs';
 import { SystemAudioCapture } from './system-audio-capture.mjs';
@@ -2091,7 +2092,7 @@ async function initializeDesktop() {
   let musicSuspended = false;
   const musicAvailable = () =>
     skillEnabled('capri.music') &&
-    process.platform === 'win32' &&
+    (process.platform === 'win32' || process.platform === 'darwin') &&
     !sessionLocked &&
     !musicSuspended &&
     !shuttingDown &&
@@ -2205,7 +2206,8 @@ async function initializeDesktop() {
     if (musicStartup || musicListening.session) return;
     const startup = (musicStartup = new AbortController());
     const error = () => Error('Music listening could not start. Try again from Settings.');
-    const source = audioRoutes.value.routes.music;
+    const route = audioRoutes.value.routes.music;
+    const source = nativeMusicSource(route);
     let timer;
     try {
       if (!musicAvailable()) throw error();
@@ -2221,7 +2223,7 @@ async function initializeDesktop() {
     } catch {
       if (musicStartup !== startup) return;
       stopMusicListening();
-      const failure = source ? Error('The selected audio source could not start.') : error();
+      const failure = route ? Error('The selected audio source could not start.') : error();
       musicListening.fail(failure.message);
       throw failure;
     } finally {
@@ -9163,7 +9165,8 @@ async function initializeDesktop() {
       return media.music.configure(value, { role });
     });
     handle('capri:music-audio-start', () => {
-      if (audioRoutes.value.routes.music) throw Error('The selected audio source could not start.');
+      if (nativeMusicSource(audioRoutes.value.routes.music))
+        throw Error('The selected audio source could not start.');
       return media.music.start();
     });
     handle('capri:music-audio-ready', media.music.ready);

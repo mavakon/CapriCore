@@ -72,6 +72,7 @@ function fixture(t, options = {}) {
     prepare:
       options.prepare ?? (async () => ({ python: 'fixture-python.exe', folder: 'fixture-model' })),
     available: options.available ?? (() => true),
+    platform: options.platform ?? 'win32',
     ...(options.now ? { now: options.now } : {}),
     ...(options.staleMs ? { staleMs: options.staleMs } : {}),
     spawnImpl(...args) {
@@ -198,6 +199,29 @@ test('capture and worker readiness are separate; private PCM travels only over b
   assert.equal(f.child().stdin.destroyed, true);
   f.result({ type: 'ready' });
   assert.equal(f.service.snapshot().phase, 'off', 'Late worker output cannot reactivate capture');
+});
+
+test('on macOS the worker gets a POSIX environment and the detector is prepared for macOS', async (t) => {
+  let prepared;
+  const f = fixture(t, {
+    platform: 'darwin',
+    prepare: async (_root, options) => {
+      prepared = options.platform;
+      return { python: '/fixture/asr-venv/bin/python', folder: 'fixture-model' };
+    },
+  });
+  await f.start();
+  assert.equal(prepared, 'darwin');
+  const [executable, , options] = f.spawns[0];
+  assert.equal(executable, '/fixture/asr-venv/bin/python');
+  assert(
+    Object.keys(options.env).every((key) =>
+      /^(?:PATH|HOME|TMPDIR|LANG|PYTHONUTF8|PYTHONIOENCODING|PYTHONDONTWRITEBYTECODE|OMP_NUM_THREADS|OPENBLAS_NUM_THREADS|MKL_NUM_THREADS)$/.test(
+        key,
+      ),
+    ),
+  );
+  assert.equal(options.env.OMP_NUM_THREADS, '1');
 });
 
 test('packets enforce the active grant, exact size, approved fields and increasing sequence', async (t) => {

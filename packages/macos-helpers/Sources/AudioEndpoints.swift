@@ -4,6 +4,7 @@
 // "CAPRI-AUDIO-1\n" and then 100 ms packets of 16 kHz mono Float32 until stdin
 // closes. Inputs are microphones; an output is captured through a private Core
 // Audio process tap (macOS 14.2 or later), the counterpart of WASAPI loopback.
+// `capture out:default` follows whichever output is the default when it starts.
 import AVFoundation
 import CoreAudio
 import Foundation
@@ -257,7 +258,19 @@ private func systemAudioDevice(_ outputUid: String) throws -> AudioObjectID {
   return aggregate
 }
 
-private func streamEndpoint(_ id: String) throws -> Never {
+/// The id of the current default output, for `out:default`.
+private func defaultOutputId() -> String? {
+  guard
+    let device = scalar(
+      AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultOutputDevice,
+      AudioObjectID(kAudioObjectUnknown)),
+    device != kAudioObjectUnknown, let uid = string(device, kAudioDevicePropertyDeviceUID)
+  else { return nil }
+  return "out:" + uid
+}
+
+private func streamEndpoint(_ requested: String) throws -> Never {
+  let id = requested == "out:default" ? defaultOutputId() : requested
   guard let endpoint = endpoints().first(where: { $0.id == id }) else {
     throw HelperError("The selected audio source is unavailable.")
   }

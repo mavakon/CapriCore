@@ -14,6 +14,7 @@ import { noLinks } from '../../packages/installer/src/policy.mjs';
 import { fileHash } from '../../packages/installer/src/download.mjs';
 import { resumableArtifact } from '../../packages/installer/src/resumable-download.mjs';
 import { runCommand } from '../../packages/installer/src/commands.mjs';
+import { ownedInterpreter, venvPython } from '../../packages/runtime/src/host/python-env.mjs';
 
 export function musicDetectorConfig(root) {
   const value = JSON.parse(readFileSync(path.join(root, 'config/music-detector.json'), 'utf8'));
@@ -38,11 +39,10 @@ export function musicDetectorConfig(root) {
   return value;
 }
 
-export function musicPython(root) {
+export function musicPython(root, platform = process.platform) {
   return (
-    ['router-venv', 'asr-venv']
-      .map((name) => path.join(root, '.runtime', name, 'Scripts/python.exe'))
-      .find(existsSync) ?? null
+    ['router-venv', 'asr-venv'].map((name) => venvPython(root, name, platform)).find(existsSync) ??
+    null
   );
 }
 
@@ -64,12 +64,21 @@ async function verifiedModel(folder, config) {
 
 export async function prepareMusicDetector(
   root,
-  { signal, progress = () => {}, fetchImpl = fetch, execute = runCommand } = {},
+  {
+    signal,
+    progress = () => {},
+    fetchImpl = fetch,
+    execute = runCommand,
+    platform = process.platform,
+  } = {},
 ) {
   const config = musicDetectorConfig(root),
-    python = musicPython(root);
+    python = musicPython(root, platform);
   if (!python) throw Error('Music listening is unavailable. Run Capri Setup again.');
-  noLinks(python);
+  // macOS venvs link bin/python to the managed interpreter in .runtime/python.
+  if (platform !== 'darwin') noLinks(python);
+  else if (!ownedInterpreter(root, python))
+    throw Error('Music listening is unavailable. Run Capri Setup again.');
   const folder = path.join(root, 'data/models/music-detector', config.id);
   if (await verifiedModel(folder, config)) return { folder, python, config };
   const parent = path.join(root, '.runtime/music-detector');
@@ -100,22 +109,38 @@ export async function prepareMusicDetector(
   );
   signal?.throwIfAborted();
   const temporary = mkdtempSync(path.join(parent, 'verified-'));
-  await execute(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      path.join(root, 'integrations/music_runtime/extract.ps1'),
-      '-Archive',
-      archive,
-      '-Destination',
-      temporary,
-    ],
-    { cwd: root, timeoutMs: 30000, signal },
-  );
+  // macOS: only the four named members, without their folder, from the pinned
+  // archive; verifiedModel then checks each one's size and SHA-256.
+  if (platform === 'darwin')
+    await execute(
+      '/usr/bin/unzip',
+      [
+        '-q',
+        '-j',
+        archive,
+        ...config.files.map((file) => 'yamnet-onnx-float/' + file.name),
+        '-d',
+        temporary,
+      ],
+      { cwd: root, timeoutMs: 30000, signal },
+    );
+  else
+    await execute(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        path.join(root, 'integrations/music_runtime/extract.ps1'),
+        '-Archive',
+        archive,
+        '-Destination',
+        temporary,
+      ],
+      { cwd: root, timeoutMs: 30000, signal },
+    );
   signal?.throwIfAborted();
   if (!(await verifiedModel(temporary, config))) throw Error('Music detector verification failed.');
   noLinks(folder);
