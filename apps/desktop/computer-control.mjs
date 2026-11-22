@@ -109,6 +109,10 @@ export class ComputerControl {
     cleanupTimeoutMs = 2000,
     pointerDuration = () => 220,
     applicationAdapter,
+    // Returns an Error when the operating system has not allowed input (macOS
+    // Accessibility); nothing is shown or armed in that case. Synchronous, so
+    // a stop right after begin() still finds the session.
+    permissions = () => null,
   }) {
     Object.assign(this, {
       allowed,
@@ -131,6 +135,7 @@ export class ComputerControl {
       cleanupTimeoutMs,
       pointerDuration,
       applicationAdapter,
+      permissions,
     });
     this.session = null;
   }
@@ -192,6 +197,10 @@ export class ComputerControl {
     }
     if (typeof goal !== 'string' || !goal.trim() || goal.length > 8000)
       throw new Error('Describe the owner task.');
+    if (!this.session) {
+      const missing = this.permissions();
+      if (missing) throw missing;
+    }
     if (this.session) {
       if (!this.session.ready) throw new Error('Wait for the current operation to finish.');
       return { ok: true, ...this.snapshot() };

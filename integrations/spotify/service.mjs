@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { spotifySourceHash } from './native-build.mjs';
+import {
+  macosHelperEnvironment,
+  macosHelperExecutable,
+} from '../../packages/runtime/src/host/macos-helper.mjs';
 
 export const ACTIONS = [
   'status',
@@ -190,7 +194,18 @@ export async function spotifyLinkTitle(uri, { fetchImpl = fetch, signal } = {}) 
   return metadata.title.trim();
 }
 
-function spotifySpawnFailure(error) {
+function spotifySpawnFailure(error, platform = process.platform) {
+  if (
+    platform === 'darwin' &&
+    error?.syscall?.startsWith('spawn') &&
+    ['UNKNOWN', 'EACCES', 'EPERM'].includes(error.code)
+  )
+    return Object.assign(
+      new Error(
+        'macOS could not start the Capri helper for Spotify. Run npm run setup:macos-helpers, then try again.',
+      ),
+      { code: 'CAPRI_SPOTIFY_HELPER_LAUNCH_FAILED', cause: error },
+    );
   if (error?.syscall?.startsWith('spawn') && ['UNKNOWN', 'EACCES', 'EPERM'].includes(error.code))
     return Object.assign(
       new Error(
@@ -203,13 +218,18 @@ function spotifySpawnFailure(error) {
 
 /** Private, serial stdio. Mutating commands are never retried automatically. */
 export class SpotifyWorker {
-  constructor({ root, spawnImpl = spawn }) {
-    Object.assign(this, { root, spawnImpl });
+  constructor({ root, spawnImpl = spawn, platform = process.platform }) {
+    Object.assign(this, { root, spawnImpl, platform });
     this.child = null;
     this.pending = new Map();
     this.sequence = 0;
   }
   start() {
+    if (this.platform === 'darwin') {
+      // The Swift helper drives Spotify's AppleScript interface with the same protocol.
+      const exe = macosHelperExecutable(this.root, { platform: this.platform });
+      return this.launch(exe, ['spotify'], macosHelperEnvironment(this.root), exe);
+    }
     const folder = path.join(this.root, '.runtime/spotify-bridge');
     if (!existsSync(path.join(folder, 'build.json')))
       throw new Error('Spotify bridge is not installed. Run setup-spotify.cmd.');
@@ -221,26 +241,29 @@ export class SpotifyWorker {
     const hash = spotifySourceHash(this.root);
     if (hash !== build.sourceSha256)
       throw new Error('Spotify bridge needs rebuilding. Run setup-spotify.cmd.');
-    if (this.child && this.sourceHash === hash) return;
-    if (this.child) this.close();
     const env = Object.fromEntries(
       ['SystemRoot', 'WINDIR', 'PATH', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'TEMP', 'TMP']
         .filter((name) => process.env[name])
         .map((name) => [name, process.env[name]]),
     );
+    return this.launch(exe, [], env, hash);
+  }
+  launch(exe, args, env, identity) {
+    if (this.child && this.sourceHash === identity) return;
+    if (this.child) this.close();
     let child;
     try {
-      child = this.spawnImpl(exe, [], {
+      child = this.spawnImpl(exe, args, {
         cwd: this.root,
         env,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
-      throw spotifySpawnFailure(error);
+      throw spotifySpawnFailure(error, this.platform);
     }
     this.child = child;
-    this.sourceHash = hash;
+    this.sourceHash = identity;
     let buffer = '';
     const fail = () => {
       if (this.child !== child) return;
@@ -252,7 +275,7 @@ export class SpotifyWorker {
     };
     child.on('error', (error) => {
       if (this.child !== child) return;
-      const launchError = spotifySpawnFailure(error);
+      const launchError = spotifySpawnFailure(error, this.platform);
       if (launchError !== error) this.close(launchError);
       else fail();
     });

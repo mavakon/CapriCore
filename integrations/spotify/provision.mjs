@@ -4,6 +4,13 @@ import path from 'node:path';
 import { root } from '../../packages/runtime/src/index.mjs';
 import { NATIVE_SOURCES, spotifySourceHash } from './native-build.mjs';
 
+if (process.platform === 'darwin') {
+  // macOS: Spotify is controlled through the shared Swift helper.
+  const { buildMacosHelper } = await import('../../packages/runtime/src/host/macos-helper.mjs');
+  await buildMacosHelper(root);
+  console.log('Spotify control for macOS is ready (Capri macOS helper).');
+  process.exit(0);
+}
 if (process.platform !== 'win32')
   throw new Error('Spotify desktop integration requires Windows 10/11.');
 const windows = process.env.SystemRoot ?? 'C:\\Windows';

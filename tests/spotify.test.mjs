@@ -156,6 +156,7 @@ test('worker uses an owned executable, private stdio and an environment without 
   child.kill = () => {};
   const worker = new SpotifyWorker({
     root: fixture,
+    platform: 'win32',
     spawnImpl: (...args) => {
       launch = args;
       return child;

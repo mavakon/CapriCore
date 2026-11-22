@@ -34,6 +34,7 @@ import {
   llamaBundleDirectory,
 } from '../../packages/runtime/src/host/platform.mjs';
 import { electronBundleReady } from '../../packages/runtime/src/host/electron-bundle.mjs';
+import { buildMacosHelper } from '../../packages/runtime/src/host/macos-helper.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const spec = JSON.parse(readFileSync(path.join(root, 'config/macos-runtime.json'), 'utf8')).llama;
@@ -163,6 +164,16 @@ export async function setupMacos() {
     if (!electronBundleReady(electron)) throw new Error('The Electron download is incomplete.');
     log('Electron is ready.');
   } else log('Electron is ready.');
+  // Screen and computer features need the Swift helper; chat works without it.
+  try {
+    await buildMacosHelper(root, { log });
+    log('macOS helper is ready.');
+  } catch (error) {
+    log(
+      'the macOS helper was not built, so screen, computer control, Spotify and window awareness stay off: ' +
+        (error.stderr?.trim().split('\n').at(-1) || error.message),
+    );
+  }
   if (!existsSync(path.join(root, 'config/core.local.json')))
     log('next: npm run setup, then npm run models:pull, then npm run desktop.');
   else log('next: npm run models:pull (if not done), then npm run desktop.');

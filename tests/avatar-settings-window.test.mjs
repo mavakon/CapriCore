@@ -24,6 +24,8 @@ function fixture() {
     handle.writeBigUInt64LE(BigInt(record.windowId));
     return handle;
   };
+  // macOS identifies windows by CGWindowID, which Electron reports here.
+  view.getMediaSourceId = () => `window:${record.windowId}:0`;
   return view;
 }
 
@@ -105,6 +107,11 @@ test('a minimized Settings window hides its perched avatar even while Electron r
 test('only the trusted Settings surface and exact native window identity can install a local tracker', () => {
   const view = fixture();
   assert.equal(settingsAvatarWindowId(view, url), record.windowId);
+  assert.equal(settingsAvatarWindowId(view, url, 'win32'), record.windowId);
+  assert.equal(settingsAvatarWindowId(view, url, 'darwin'), record.windowId);
+  const unnumbered = fixture();
+  unnumbered.getMediaSourceId = () => 'screen:1:0';
+  assert.equal(settingsAvatarWindowId(unnumbered, url, 'darwin'), '');
   assert.equal(settingsAvatarWindowId(view, 'capri://desktop/index.html'), '');
   for (const [candidate, requested] of [
     [undefined, record],

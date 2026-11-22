@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-export function settingsAvatarWindowId(view, url) {
+export function settingsAvatarWindowId(view, url, platform = process.platform) {
   if (!view || view.isDestroyed() || view.webContents.getURL() !== url) return '';
+  // macOS window numbers (CGWindowID) come from the capture source ID; the
+  // native handle is an NSView pointer there.
+  if (platform === 'darwin')
+    return /^window:([1-9]\d{0,9}):\d+$/.exec(view.getMediaSourceId?.() ?? '')?.[1] ?? '';
   const handle = view.getNativeWindowHandle();
   if (handle.length !== 4 && handle.length !== 8) return '';
   return String(handle.length === 8 ? handle.readBigUInt64LE() : handle.readUInt32LE());

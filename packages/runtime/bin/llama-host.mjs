@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createLlamaBridge } from '../src/providers/llama-bridge.mjs';
@@ -49,6 +49,13 @@ const workers = new LlamaWorkers({
   device,
   overheadMiB,
   canRetryIllegalInstruction: canIsolate,
+  // The processed chat prompt survives the idle unload and restarts, so the
+  // first reply does not evaluate Capri's whole system prompt again.
+  slotCache: {
+    directory: path.join(paths.data, 'run', 'llama-slots'),
+    // A replaced engine build never loads a state saved by another one.
+    version: [settings.llamaVersion, executable, statSync(executable).mtimeMs].join('\n'),
+  },
   start: async (role, args, extra, { allowGpu, baseline }) => {
     const name = roleName(role);
     let target = executable;

@@ -12,6 +12,12 @@ export function prepareNativeHelper(root, name, references = []) {
   if (pending.has(key)) return pending.get(key);
   const task = (async () => {
     if (!/^[a-z][a-z-]+$/.test(name)) throw new Error('Invalid native helper name.');
+    // These helpers are C# for Windows. macOS features use the Swift helper
+    // (packages/macos-helpers); the rest are not available there yet.
+    if (process.platform !== 'win32')
+      throw Object.assign(new Error('This feature is not available on this system yet.'), {
+        code: 'CAPRI_NATIVE_HELPER_UNAVAILABLE',
+      });
     const source = path.join(root, 'apps/desktop/native', name + '.cs');
     const hash = createHash('sha256')
       .update(await readFile(source))
